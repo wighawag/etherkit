@@ -13,7 +13,10 @@ import {
 } from 'viem';
 import {privateKeyToAccount} from 'viem/accounts';
 import {foundry} from 'viem/chains';
-import {createTrackedWalletClient, type TrackedWalletClient} from '../src/index.js';
+import {
+	createTrackedWalletClient,
+	type TrackedWalletClient,
+} from '../src/index.js';
 import {RPC_URL} from './prool/url.js';
 import {TEST_CONTRACT_ABI, TEST_CONTRACT_BYTECODE} from './utils/data.js';
 
@@ -349,6 +352,7 @@ describe('TrackedWalletClient', () => {
 			);
 
 			await expect(
+				//@ts-ignore
 				noAccountTrackedClient.sendTransaction({
 					to: RECIPIENT_ADDRESS,
 					value: parseEther('0.01'),
