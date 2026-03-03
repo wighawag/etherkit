@@ -33,10 +33,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --ignore-scripts
 
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install chromium
-        working-directory: packages/observator-svelte
-
       - name: build packages
         run: pnpm build
 
