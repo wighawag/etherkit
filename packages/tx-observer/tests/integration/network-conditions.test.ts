@@ -47,7 +47,9 @@ describe('Network Conditions', () => {
 		it('network-eth-getTransactionByHash-fails: Tx lookup fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			// First successful process
@@ -69,7 +71,10 @@ describe('Network Conditions', () => {
 		it('network-eth-getTransactionReceipt-fails: Receipt fetch fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -90,7 +95,10 @@ describe('Network Conditions', () => {
 		it('network-intermittent: Random failures with recovery', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -128,7 +136,9 @@ describe('Network Conditions', () => {
 		it('should handle provider disconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			await processAndWait(setup);
@@ -145,7 +155,10 @@ describe('Network Conditions', () => {
 		it('should recover after reconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -174,7 +187,10 @@ describe('Network Conditions', () => {
 		it('blocks-progression: Blocks advance normally', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -205,7 +221,10 @@ describe('Network Conditions', () => {
 		it('blocks-finality-boundary: Tx at exactly finality boundary', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -234,7 +253,9 @@ describe('Network Conditions', () => {
 		it('should handle latency in responses', async () => {
 			setup = createTestSetup({finality: 12, latencyMs: 50});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			const startTime = Date.now();
@@ -252,7 +273,10 @@ describe('Network Conditions', () => {
 		it('should work with dynamic latency changes', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			addToMempool();
 
 			// Start with no latency
@@ -276,7 +300,9 @@ describe('Network Conditions', () => {
 		it('timing-rapid-process-calls: Multiple process calls in quick succession', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			// Make multiple rapid process calls
@@ -305,7 +331,10 @@ describe('Network Conditions', () => {
 		it('timing-stale-data: Process uses fresh data each call', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -347,10 +376,10 @@ describe('Network Conditions', () => {
 		it('should handle remove specific operation', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {
-				operationId: op1Id,
-				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId: op1Id, addToMempool: addTx1} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			addTx1();
 
 			const {operationId: op2Id, addToMempool: addTx2} = addSingleTxOperation(

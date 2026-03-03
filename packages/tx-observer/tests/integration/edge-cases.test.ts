@@ -77,7 +77,10 @@ describe('Edge Cases for Full Coverage', () => {
 
 	describe('Already Finalized Transaction', () => {
 		it('should skip processing when tx is already included and finalized', async () => {
-			const {operationId, operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, operation, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			// Get tx to broadcasted and included

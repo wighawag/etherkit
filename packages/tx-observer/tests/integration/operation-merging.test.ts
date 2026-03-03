@@ -437,7 +437,9 @@ describe('Operation Status Merging', () => {
 		});
 
 		it('should handle single transaction operation', async () => {
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 
 			addToMempool();
 			await processAndWait(setup);

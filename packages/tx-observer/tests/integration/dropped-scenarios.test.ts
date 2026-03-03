@@ -36,7 +36,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const txHash = operation.transactions[0].hash;
 			const account = operation.transactions[0].from;
 
@@ -155,7 +158,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const account = operation.transactions[0].from;
 
 			addToMempool();
@@ -181,10 +187,13 @@ describe('Dropped Transaction Scenarios', () => {
 			const broadcastTimestamp = Date.now();
 
 			// Create operation with tx that has specific broadcast timestamp
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {
-				nonce,
-				broadcastTimestamp,
-			});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{
+					nonce,
+					broadcastTimestamp,
+				},
+			);
 			const account = operation.transactions[0].from;
 
 			addToMempool();
@@ -209,7 +218,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const account = operation.transactions[0].from;
 
 			addToMempool();
@@ -233,7 +245,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const account = operation.transactions[0].from;
 
 			addToMempool();
@@ -259,7 +274,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 
 			addToMempool();
 			await processAndWait(setup);
@@ -285,7 +303,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -315,23 +336,25 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce2 = 3;
 
 			// Operation 1 from account 1
-			const {operation: op1, operationId: opId1, addToMempool: addTx1} = addSingleTxOperation(
-				setup,
-				{
-					nonce: nonce1,
-					from: TEST_ACCOUNT,
-				},
-			);
+			const {
+				operation: op1,
+				operationId: opId1,
+				addToMempool: addTx1,
+			} = addSingleTxOperation(setup, {
+				nonce: nonce1,
+				from: TEST_ACCOUNT,
+			});
 
 			// Operation 2 from account 2
 			const account2 = '0xabcdef1234567890123456789012345678901234' as const;
-			const {operation: op2, operationId: opId2, addToMempool: addTx2} = addSingleTxOperation(
-				setup,
-				{
-					nonce: nonce2,
-					from: account2,
-				},
-			);
+			const {
+				operation: op2,
+				operationId: opId2,
+				addToMempool: addTx2,
+			} = addSingleTxOperation(setup, {
+				nonce: nonce2,
+				from: account2,
+			});
 
 			addTx1();
 			addTx2();
@@ -360,7 +383,10 @@ describe('Dropped Transaction Scenarios', () => {
 		it('should handle nonce 0 correctly', async () => {
 			const nonce = 0;
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const account = operation.transactions[0].from;
 
 			addToMempool();
@@ -380,7 +406,10 @@ describe('Dropped Transaction Scenarios', () => {
 		it('should handle very high nonces', async () => {
 			const nonce = 999999;
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const account = operation.transactions[0].from;
 
 			addToMempool();

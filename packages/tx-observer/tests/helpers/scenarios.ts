@@ -162,7 +162,9 @@ export async function processAndWait(setup: TestSetup): Promise<void> {
 /**
  * Get the latest emitted operation from emissions
  */
-export function getLatestEmission(setup: TestSetup): OnchainOperation | undefined {
+export function getLatestEmission(
+	setup: TestSetup,
+): OnchainOperation | undefined {
 	if (setup.emissions.length === 0) {
 		return undefined;
 	}
@@ -172,7 +174,10 @@ export function getLatestEmission(setup: TestSetup): OnchainOperation | undefine
 /**
  * Get the latest emitted operation for a specific operation ID
  */
-export function getLatestEmissionForOp(setup: TestSetup, operationId: string): OnchainOperation | undefined {
+export function getLatestEmissionForOp(
+	setup: TestSetup,
+	operationId: string,
+): OnchainOperation | undefined {
 	// Search backwards through emissions to find the latest for this operationId
 	for (let i = setup.emissionEvents.length - 1; i >= 0; i--) {
 		if (setup.emissionEvents[i].id === operationId) {

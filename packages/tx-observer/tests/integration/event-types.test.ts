@@ -170,7 +170,9 @@ describe('Event Types', () => {
 
 			// TX2 should now be Included
 			const afterTx2Include = getLatestEmission('multi-tx-event');
-			expect(afterTx2Include?.transactions[1].state?.inclusion).toBe('Included');
+			expect(afterTx2Include?.transactions[1].state?.inclusion).toBe(
+				'Included',
+			);
 
 			// 'operation' event should fire (TX2 changed)
 			expect(operationEmissions.length).toBeGreaterThan(opCountAfterTx1Include);

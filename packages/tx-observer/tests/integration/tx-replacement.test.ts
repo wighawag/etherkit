@@ -317,7 +317,10 @@ describe('Transaction Replacement Scenarios', () => {
 			const nonce = 5;
 
 			// Create operation with TX
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			// Appear in mempool

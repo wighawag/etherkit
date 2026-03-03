@@ -31,7 +31,10 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Basic Lifecycle States', () => {
 		it('should transition from BeingFetched to Broadcasted when tx appears in mempool', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 
 			// Initial state
 			expect(operation.state).toBeUndefined();
@@ -50,7 +53,10 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should transition from Broadcasted to Included when tx is mined', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -67,7 +73,10 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should set final timestamp when tx reaches finality', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -91,7 +100,10 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should handle failed transaction correctly', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -186,7 +198,9 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Mempool Visibility', () => {
 		it('should detect tx immediately when added to mempool', async () => {
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 
 			// Add to mempool before first process
 			addToMempool();
@@ -198,7 +212,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should handle delayed mempool visibility', async () => {
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+				nonce: 5,
+			});
 
 			// Process without tx in mempool
 			await processAndWait(setup);
@@ -230,9 +246,12 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should handle tx without initial nonce', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {
-				nonce: undefined,
-			});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{
+					nonce: undefined,
+				},
+			);
 
 			// Before processing, nonce might be undefined
 			expect(operation.transactions[0].nonce).toBeUndefined();
@@ -248,7 +267,10 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Block Confirmation', () => {
 		it('should not finalize tx before reaching finality threshold', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -267,7 +289,10 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should finalize tx exactly at finality threshold', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(
+				setup,
+				{nonce: 5},
+			);
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
