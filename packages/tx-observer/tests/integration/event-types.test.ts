@@ -8,6 +8,7 @@ import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
 	initTransactionProcessor,
 	type OnchainOperation,
+	type OnchainOperationEvent,
 } from '../../src/index.js';
 import {
 	createMockProvider,
@@ -25,6 +26,7 @@ describe('Event Types', () => {
 	let processor: ReturnType<typeof initTransactionProcessor>;
 	let controller: MockProviderController;
 	let operationEmissions: OnchainOperation[];
+	let operationEvents: OnchainOperationEvent[];
 	let statusEmissions: OnchainOperation[];
 	let cleanupOperation: () => void;
 	let cleanupStatus: () => void;
@@ -42,11 +44,13 @@ describe('Event Types', () => {
 		});
 
 		operationEmissions = [];
+		operationEvents = [];
 		statusEmissions = [];
 
 		// Listen to both event types
 		cleanupOperation = processor.onOperationUpdated((event) => {
 			operationEmissions.push(structuredClone(event.operation));
+			operationEvents.push(structuredClone(event));
 			return () => {};
 		});
 
@@ -60,6 +64,16 @@ describe('Event Types', () => {
 		cleanupOperation();
 		cleanupStatus();
 	});
+
+	// Helper to get latest emission for an operation ID
+	function getLatestEmission(opId: string): OnchainOperation | undefined {
+		for (let i = operationEvents.length - 1; i >= 0; i--) {
+			if (operationEvents[i].id === opId) {
+				return operationEvents[i].operation;
+			}
+		}
+		return undefined;
+	}
 
 	describe('operation vs operation:status events', () => {
 		it('should emit both events when operation status changes', async () => {
@@ -125,7 +139,8 @@ describe('Event Types', () => {
 
 			// First process: both become Broadcasted
 			await processor.process();
-			expect(op.state?.inclusion).toBe('InMemPool');
+			const emittedOp = getLatestEmission('multi-tx-event');
+			expect(emittedOp?.state?.inclusion).toBe('InMemPool');
 
 			const opCountAfterBroadcast = operationEmissions.length;
 			const statusCountAfterBroadcast = statusEmissions.length;
@@ -135,8 +150,9 @@ describe('Event Types', () => {
 			controller.setAccountNonce(TEST_ACCOUNT, 6);
 			await processor.process();
 
-			expect(op.state?.inclusion).toBe('Included');
-			expect(op.state?.txIndex).toBe(0); // TX1
+			const afterInclude = getLatestEmission('multi-tx-event');
+			expect(afterInclude?.state?.inclusion).toBe('Included');
+			expect(afterInclude?.state?.txIndex).toBe(0); // TX1
 
 			const opCountAfterTx1Include = operationEmissions.length;
 			const statusCountAfterTx1Include = statusEmissions.length;
@@ -153,7 +169,8 @@ describe('Event Types', () => {
 			await processor.process();
 
 			// TX2 should now be Included
-			expect(op.transactions[1].state?.inclusion).toBe('Included');
+			const afterTx2Include = getLatestEmission('multi-tx-event');
+			expect(afterTx2Include?.transactions[1].state?.inclusion).toBe('Included');
 
 			// 'operation' event should fire (TX2 changed)
 			expect(operationEmissions.length).toBeGreaterThan(opCountAfterTx1Include);
@@ -177,7 +194,8 @@ describe('Event Types', () => {
 			processor.addMultiple({'no-change': op});
 
 			await processor.process();
-			expect(op.state?.inclusion).toBe('InMemPool');
+			const emittedOp = getLatestEmission('no-change');
+			expect(emittedOp?.state?.inclusion).toBe('InMemPool');
 
 			const opCountBefore = operationEmissions.length;
 			const statusCountBefore = statusEmissions.length;
@@ -214,8 +232,9 @@ describe('Event Types', () => {
 			controller.setAccountNonce(TEST_ACCOUNT, 6);
 			await processor.process();
 
-			expect(op.state?.inclusion).toBe('Included');
-			expect(op.transactions[0].state?.final).toBeUndefined(); // Not final yet
+			const includedOp = getLatestEmission('finality-test');
+			expect(includedOp?.state?.inclusion).toBe('Included');
+			expect(includedOp?.transactions[0].state?.final).toBeUndefined(); // Not final yet
 
 			const opCountBefore = operationEmissions.length;
 			const statusCountBefore = statusEmissions.length;
@@ -226,7 +245,8 @@ describe('Event Types', () => {
 			await processor.process();
 
 			// TX should now be final
-			expect(op.transactions[0].state?.final).toBeDefined();
+			const finalizedOp = getLatestEmission('finality-test');
+			expect(finalizedOp?.transactions[0].state?.final).toBeDefined();
 
 			// 'operation' event should fire (TX finality changed)
 			expect(operationEmissions.length).toBeGreaterThan(opCountBefore);

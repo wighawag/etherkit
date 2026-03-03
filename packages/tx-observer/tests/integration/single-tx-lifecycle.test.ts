@@ -4,6 +4,7 @@ import {
 	addSingleTxOperation,
 	processAndWait,
 	runBasicLifecycleScenario,
+	getLatestEmissionForOp,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
@@ -30,39 +31,43 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Basic Lifecycle States', () => {
 		it('should transition from BeingFetched to Broadcasted when tx appears in mempool', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 
 			// Initial state
 			expect(operation.state).toBeUndefined();
 
 			// Process before adding to mempool - should be NotFound
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'NotFound');
+			const notFoundOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(notFoundOp!, 'NotFound');
 
 			// Add to mempool and process
 			addToMempool();
 			await processAndWait(setup);
 
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 		});
 
 		it('should transition from Broadcasted to Included when tx is mined', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Include the tx
 			setup.controller.includeTx(txHash, 'success');
 			await processAndWait(setup);
 
-			assertOperationIncluded(operation, 'Success');
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
 		});
 
 		it('should set final timestamp when tx reaches finality', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -73,18 +78,20 @@ describe('Single Transaction Lifecycle', () => {
 			await processAndWait(setup);
 
 			// Not finalized yet
-			expect(operation.state?.final).toBeUndefined();
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			expect(includedOp?.state?.final).toBeUndefined();
 
 			// Advance blocks to finality
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 
 			// Should now be finalized
-			assertOperationFinalized(operation);
+			const finalizedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationFinalized(finalizedOp!);
 		});
 
 		it('should handle failed transaction correctly', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -94,7 +101,8 @@ describe('Single Transaction Lifecycle', () => {
 			setup.controller.includeTx(txHash, 'failure');
 			await processAndWait(setup);
 
-			assertOperationIncluded(operation, 'Failure');
+			const failedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(failedOp!, 'Failure');
 		});
 
 		it('should complete full lifecycle: BeingFetched → Broadcasted → Included → Final', async () => {
@@ -178,47 +186,51 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Mempool Visibility', () => {
 		it('should detect tx immediately when added to mempool', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 
 			// Add to mempool before first process
 			addToMempool();
 			await processAndWait(setup);
 
 			// Should go directly to Broadcasted, not through NotFound
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 		});
 
 		it('should handle delayed mempool visibility', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 
 			// Process without tx in mempool
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'NotFound');
+			const notFoundOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(notFoundOp!, 'NotFound');
 
 			// Tx appears in mempool later
 			addToMempool();
 			await processAndWait(setup);
 
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 		});
 	});
 
 	describe('Transaction Nonce Handling', () => {
 		it('should track nonce from mempool tx', async () => {
 			const expectedNonce = 42;
-			const {operation, addToMempool} = addSingleTxOperation(setup, {
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {
 				nonce: expectedNonce,
 			});
 
 			addToMempool();
 			await processAndWait(setup);
 
-			// Nonce should be set from the mempool response
-			expect(operation.transactions[0].nonce).toBe(expectedNonce);
+			// Nonce should be set from the mempool response (in emitted operation)
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			expect(emittedOp?.transactions[0].nonce).toBe(expectedNonce);
 		});
 
 		it('should handle tx without initial nonce', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {
 				nonce: undefined,
 			});
 
@@ -228,14 +240,15 @@ describe('Single Transaction Lifecycle', () => {
 			addToMempool();
 			await processAndWait(setup);
 
-			// After processing, nonce should be set (defaulted to 0 in mock)
-			expect(typeof operation.transactions[0].nonce).toBe('number');
+			// After processing, nonce should be set (defaulted to 0 in mock) in emitted operation
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			expect(typeof emittedOp?.transactions[0].nonce).toBe('number');
 		});
 	});
 
 	describe('Block Confirmation', () => {
 		it('should not finalize tx before reaching finality threshold', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -249,11 +262,12 @@ describe('Single Transaction Lifecycle', () => {
 			await processAndWait(setup);
 
 			// Should still not be finalized
-			expect(operation.state?.final).toBeUndefined();
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			expect(emittedOp?.state?.final).toBeUndefined();
 		});
 
 		it('should finalize tx exactly at finality threshold', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 
 			addToMempool();
@@ -266,7 +280,8 @@ describe('Single Transaction Lifecycle', () => {
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 
-			assertOperationFinalized(operation);
+			const finalizedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationFinalized(finalizedOp!);
 		});
 	});
 

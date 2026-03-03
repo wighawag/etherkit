@@ -3,6 +3,7 @@ import {
 	createTestSetup,
 	addSingleTxOperation,
 	processAndWait,
+	getLatestEmissionForOp,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
@@ -120,14 +121,19 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 			removeHook();
 
-			// TX2 must be in the operation
-			assertOperationContainsTx(op, tx2.hash);
-
-			// And in the emissions
+			// TX2 must be in the emissions
 			const hasEmissionWithTx2 = setup.emissions.some((emission) =>
 				emission.transactions.some((t) => t.hash === tx2.hash),
 			);
 			expect(hasEmissionWithTx2).toBe(true);
+
+			// And should contain tx1 as well
+			const hasEmissionWithBothTx = setup.emissions.some(
+				(emission) =>
+					emission.transactions.some((t) => t.hash === tx1.hash) &&
+					emission.transactions.some((t) => t.hash === tx2.hash),
+			);
+			expect(hasEmissionWithBothTx).toBe(true);
 		});
 	});
 
@@ -160,9 +166,10 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 			await processPromise;
 
-			// New tx should be in the operation
-			expect(operation.transactions.length).toBe(2);
-			assertOperationContainsTx(operation, tx2.hash);
+			// New tx should be in the latest emission
+			const latestEmission = getLatestEmissionForOp(setup, operationId);
+			expect(latestEmission?.transactions.length).toBe(2);
+			assertOperationContainsTx(latestEmission!, tx2.hash);
 		});
 
 		it('concurrent-add-same-id-during-process: Add operation with same ID during process', async () => {
@@ -196,10 +203,11 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 			await processPromise;
 
-			// Both txs should be merged
-			expect(op.transactions).toHaveLength(2);
-			assertOperationContainsTx(op, tx1.hash);
-			assertOperationContainsTx(op, tx2.hash);
+			// Both txs should be merged in the emission
+			const latestEmission = getLatestEmissionForOp(setup, 'shared-id');
+			expect(latestEmission?.transactions).toHaveLength(2);
+			assertOperationContainsTx(latestEmission!, tx1.hash);
+			assertOperationContainsTx(latestEmission!, tx2.hash);
 		});
 
 		it('concurrent-multiple-adds: Multiple rapid adds to same operation', async () => {
@@ -234,10 +242,11 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 			await processPromise;
 
-			// All txs should be in the operation
-			expect(op.transactions.length).toBe(6); // 1 original + 5 added
+			// All txs should be in the latest emission
+			const latestEmission = getLatestEmissionForOp(setup, 'rapid-adds');
+			expect(latestEmission?.transactions.length).toBe(6); // 1 original + 5 added
 			for (const tx of additionalTxs) {
-				assertOperationContainsTx(op, tx.hash);
+				assertOperationContainsTx(latestEmission!, tx.hash);
 			}
 		});
 

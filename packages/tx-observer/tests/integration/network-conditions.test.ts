@@ -3,6 +3,7 @@ import {
 	createTestSetup,
 	addSingleTxOperation,
 	processAndWait,
+	getLatestEmissionForOp,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
@@ -46,12 +47,13 @@ describe('Network Conditions', () => {
 		it('network-eth-getTransactionByHash-fails: Tx lookup fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			addToMempool();
 
 			// First successful process
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 
 			// Make tx lookup fail
 			setup.controller.setFailMethods(['eth_getTransactionByHash']);
@@ -59,14 +61,15 @@ describe('Network Conditions', () => {
 			// Process should throw
 			await expect(setup.processor.process()).rejects.toThrow();
 
-			// Operation should retain previous state
-			expect(operation.state?.inclusion).toBe('InMemPool');
+			// Most recent emission should still show previous state
+			const lastEmission = getLatestEmissionForOp(setup, operationId);
+			expect(lastEmission?.state?.inclusion).toBe('InMemPool');
 		});
 
 		it('network-eth-getTransactionReceipt-fails: Receipt fetch fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -80,13 +83,14 @@ describe('Network Conditions', () => {
 			await expect(setup.processor.process()).rejects.toThrow();
 
 			// Operation should stay at Broadcasted (couldn't confirm inclusion)
-			expect(operation.state?.inclusion).toBe('InMemPool');
+			const lastEmission = getLatestEmissionForOp(setup, operationId);
+			expect(lastEmission?.state?.inclusion).toBe('InMemPool');
 		});
 
 		it('network-intermittent: Random failures with recovery', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -115,7 +119,8 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// Should reach correct final state
-			assertOperationIncluded(operation, 'Success');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(emittedOp!, 'Success');
 		});
 	});
 
@@ -123,11 +128,12 @@ describe('Network Conditions', () => {
 		it('should handle provider disconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			addToMempool();
 
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 
 			// Disconnect
 			setup.controller.simulateDisconnect();
@@ -139,7 +145,7 @@ describe('Network Conditions', () => {
 		it('should recover after reconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -159,7 +165,8 @@ describe('Network Conditions', () => {
 
 			// Process should work again
 			await processAndWait(setup);
-			assertOperationIncluded(operation, 'Success');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(emittedOp!, 'Success');
 		});
 	});
 
@@ -167,7 +174,7 @@ describe('Network Conditions', () => {
 		it('blocks-progression: Blocks advance normally', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -180,14 +187,16 @@ describe('Network Conditions', () => {
 			const initialBlockNumber = setup.controller.getBlockNumber();
 
 			// Not finalized yet
-			expect(operation.state?.final).toBeUndefined();
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			expect(includedOp?.state?.final).toBeUndefined();
 
 			// Advance blocks
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 
 			// Should be finalized
-			expect(operation.state?.final).toBeDefined();
+			const finalizedOp = getLatestEmissionForOp(setup, operationId);
+			expect(finalizedOp?.state?.final).toBeDefined();
 
 			// Block number should have advanced
 			expect(setup.controller.getBlockNumber()).toBe(initialBlockNumber + 12);
@@ -196,7 +205,7 @@ describe('Network Conditions', () => {
 		it('blocks-finality-boundary: Tx at exactly finality boundary', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
@@ -208,14 +217,16 @@ describe('Network Conditions', () => {
 			// Advance to one before finality
 			setup.controller.advanceBlocks(11);
 			await processAndWait(setup);
-			expect(operation.state?.final).toBeUndefined();
+			const almostFinalOp = getLatestEmissionForOp(setup, operationId);
+			expect(almostFinalOp?.state?.final).toBeUndefined();
 
 			// Advance exactly one more block to reach finality
 			setup.controller.advanceBlock();
 			await processAndWait(setup);
 
 			// Should now be finalized
-			expect(operation.state?.final).toBeDefined();
+			const finalizedOp = getLatestEmissionForOp(setup, operationId);
+			expect(finalizedOp?.state?.final).toBeDefined();
 		});
 	});
 
@@ -223,7 +234,7 @@ describe('Network Conditions', () => {
 		it('should handle latency in responses', async () => {
 			setup = createTestSetup({finality: 12, latencyMs: 50});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			addToMempool();
 
 			const startTime = Date.now();
@@ -234,18 +245,20 @@ describe('Network Conditions', () => {
 			// Multiple RPC calls means multiple latency delays
 			expect(endTime - startTime).toBeGreaterThanOrEqual(50);
 
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 		});
 
 		it('should work with dynamic latency changes', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			addToMempool();
 
 			// Start with no latency
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Add latency mid-test
 			setup.controller.setLatency(10);
@@ -254,7 +267,8 @@ describe('Network Conditions', () => {
 			setup.controller.includeTx(txHash, 'success');
 
 			await processAndWait(setup);
-			assertOperationIncluded(operation, 'Success');
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
 		});
 	});
 
@@ -262,7 +276,7 @@ describe('Network Conditions', () => {
 		it('timing-rapid-process-calls: Multiple process calls in quick succession', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			addToMempool();
 
 			// Make multiple rapid process calls
@@ -275,7 +289,8 @@ describe('Network Conditions', () => {
 			await Promise.all(promises);
 
 			// Should reach correct state without issues
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 
 			// Should not have duplicate emissions for same state
 			const broadcastedEmissions = setup.emissions.filter(
@@ -290,12 +305,13 @@ describe('Network Conditions', () => {
 		it('timing-stale-data: Process uses fresh data each call', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 			addToMempool();
 
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Remove from mempool between process calls
 			setup.controller.removeFromMempool(txHash);
@@ -303,7 +319,8 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// Should reflect current state (NotFound), not stale (Broadcasted)
-			assertOperationInclusion(operation, 'NotFound');
+			const notFoundOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(notFoundOp!, 'NotFound');
 		});
 	});
 
@@ -331,13 +348,12 @@ describe('Network Conditions', () => {
 			setup = createTestSetup({finality: 12});
 
 			const {
-				operation: op1,
 				operationId: op1Id,
 				addToMempool: addTx1,
 			} = addSingleTxOperation(setup, {nonce: 5});
 			addTx1();
 
-			const {operation: op2, addToMempool: addTx2} = addSingleTxOperation(
+			const {operationId: op2Id, addToMempool: addTx2} = addSingleTxOperation(
 				setup,
 				{nonce: 6},
 			);
@@ -346,8 +362,10 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// Both should be broadcasted
-			assertOperationInclusion(op1, 'InMemPool');
-			assertOperationInclusion(op2, 'InMemPool');
+			const emittedOp1 = getLatestEmissionForOp(setup, op1Id);
+			const emittedOp2 = getLatestEmissionForOp(setup, op2Id);
+			assertOperationInclusion(emittedOp1!, 'InMemPool');
+			assertOperationInclusion(emittedOp2!, 'InMemPool');
 
 			const emissionsBeforeRemove = setup.emissions.length;
 
@@ -358,7 +376,8 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// op2 should still work (no state change so no emission)
-			assertOperationInclusion(op2, 'InMemPool');
+			const stillBroadcastedOp2 = getLatestEmissionForOp(setup, op2Id);
+			assertOperationInclusion(stillBroadcastedOp2!, 'InMemPool');
 		});
 	});
 });

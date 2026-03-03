@@ -3,6 +3,7 @@ import {
 	createTestSetup,
 	addSingleTxOperation,
 	processAndWait,
+	getLatestEmissionForOp,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {resetHashCounter} from '../fixtures/transactions.js';
@@ -76,7 +77,7 @@ describe('Edge Cases for Full Coverage', () => {
 
 	describe('Already Finalized Transaction', () => {
 		it('should skip processing when tx is already included and finalized', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 			const txHash = operation.transactions[0].hash;
 
 			// Get tx to broadcasted and included
@@ -89,9 +90,10 @@ describe('Edge Cases for Full Coverage', () => {
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 
-			// Verify it's finalized
-			expect(operation.state?.final).toBeDefined();
-			expect(operation.state?.inclusion).toBe('Included');
+			// Verify it's finalized via emissions
+			const latestEmission = getLatestEmissionForOp(setup, operationId);
+			expect(latestEmission?.state?.final).toBeDefined();
+			expect(latestEmission?.state?.inclusion).toBe('Included');
 
 			const emissionCountBefore = setup.emissions.length;
 
@@ -146,7 +148,8 @@ describe('Edge Cases for Full Coverage', () => {
 
 			// First process should find it in mempool
 			await processor.process();
-			expect(operation.state?.inclusion).toBe('InMemPool');
+			const latestEmission = emissions[emissions.length - 1];
+			expect(latestEmission?.state?.inclusion).toBe('InMemPool');
 
 			// Now create a scenario where first fetch returns null but second returns the tx
 			let fetchCallCount = 0;
@@ -171,8 +174,9 @@ describe('Edge Cases for Full Coverage', () => {
 			// This should hit line 484 and return false (skip for now)
 			await processor.process();
 
-			// Transaction should still be Broadcasted since retry found it
-			expect(operation.state?.inclusion).toBe('InMemPool');
+			// Transaction should still be InMemPool since retry found it
+			const finalEmission = emissions[emissions.length - 1];
+			expect(finalEmission?.state?.inclusion).toBe('InMemPool');
 		});
 	});
 
@@ -367,18 +371,13 @@ describe('Edge Cases for Full Coverage', () => {
 				return () => {};
 			});
 
-			// Create an operation with two txs: one NotFound and one BeingFetched
+			// Create an operation with two txs: both without state (BeingFetched)
 			const operation: OnchainOperation = {
 				transactions: [
 					{
 						hash: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
 						from: '0x1234567890123456789012345678901234567890',
 						broadcastTimestamp: Date.now(),
-						state: {
-							inclusion: 'NotFound',
-							final: undefined,
-							status: undefined,
-						},
 					},
 					{
 						hash: '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
@@ -389,8 +388,10 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 			processor.addMultiple({'test-op-being-fetched': operation});
 
-			// Create a provider that returns the first tx as NotFound but the second remains BeingFetched (tx not found)
-			let callCount = 0;
+			// Create a provider where:
+			// - First tx returns null on both fetches -> NotFound
+			// - Second tx returns null on first fetch, then found on retry -> skipped (no change)
+			let tx2CallCount = 0;
 			const customProvider = {
 				async request(args: {method: string; params?: unknown[]}) {
 					if (args.method === 'eth_getTransactionByHash') {
@@ -408,8 +409,8 @@ describe('Edge Cases for Full Coverage', () => {
 							hash ===
 							'0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
 						) {
-							callCount++;
-							if (callCount === 1) {
+							tx2CallCount++;
+							if (tx2CallCount === 1) {
 								return null;
 							}
 							// Retry returns the tx (this triggers the skip logic for line 484)
@@ -432,10 +433,11 @@ describe('Edge Cases for Full Coverage', () => {
 			// Process - second tx should trigger line 484 (retry returns tx, skip for now)
 			await processor.process();
 
-			// The operation status should reflect that we still have a tx that wasn't fully processed
-			// Since the retry found the tx, it was skipped and didn't change state
-			// First tx went to NotFound, second tx was skipped (still BeingFetched concept but technically unchanged)
-			expect(operation.transactions[0].state?.inclusion).toBe('NotFound');
+			// The operation should emit since at least tx1 changed state (BeingFetched -> NotFound)
+			// First tx went to NotFound, second tx was skipped (still BeingFetched effectively)
+			const latestEmission = emissions[emissions.length - 1];
+			expect(latestEmission).toBeDefined();
+			expect(latestEmission?.transactions[0].state?.inclusion).toBe('NotFound');
 		});
 	});
 });

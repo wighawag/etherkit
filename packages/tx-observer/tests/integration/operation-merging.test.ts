@@ -4,6 +4,7 @@ import {
 	addSingleTxOperation,
 	addReplacementTx,
 	processAndWait,
+	getLatestEmissionForOp,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
@@ -54,7 +55,8 @@ describe('Operation Status Merging', () => {
 
 			await processAndWait(setup);
 
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 		});
 
 		it('merge-one-included-success: One tx succeeded, others pending → Included/Success', async () => {
@@ -86,8 +88,9 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Operation should be Included/Success (one success wins)
-			assertOperationIncluded(operation, 'Success');
-			expect(operation.state?.txIndex).toBe(0);
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(emittedOp!, 'Success');
+			expect(emittedOp?.state?.txIndex).toBe(0);
 		});
 
 		it('merge-one-included-failure: One tx failed, others pending → Included/Failure', async () => {
@@ -119,7 +122,8 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Operation should be Included/Failure
-			assertOperationIncluded(operation, 'Failure');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(emittedOp!, 'Failure');
 		});
 
 		it('merge-mixed-included: One success, one failure → Included/Success', async () => {
@@ -156,8 +160,9 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Success should win over failure
-			assertOperationIncluded(operation, 'Success');
-			expect(operation.state?.txIndex).toBe(1); // TX2 index
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(emittedOp!, 'Success');
+			expect(emittedOp?.state?.txIndex).toBe(1); // TX2 index
 		});
 
 		it('merge-all-dropped: All txs dropped → Dropped', async () => {
@@ -193,7 +198,8 @@ describe('Operation Status Merging', () => {
 			setup.controller.setAccountNonce(TEST_ACCOUNT, 6);
 			await processAndWait(setup);
 
-			assertOperationDropped(operation);
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationDropped(emittedOp!);
 		});
 
 		it('merge-priority-order: Included > Broadcasted > BeingFetched > NotFound > Dropped', async () => {
@@ -210,7 +216,8 @@ describe('Operation Status Merging', () => {
 
 			// TX1 not in mempool yet
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'NotFound');
+			const notFoundOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(notFoundOp!, 'NotFound');
 
 			// Add TX2 to mempool
 			const {addToMempool: addTx2} = addReplacementTx(
@@ -226,7 +233,8 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Should be Broadcasted (TX2 is broadcasted, TX1 is NotFound)
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Include TX1 directly (skipping mempool)
 			addTx1();
@@ -234,7 +242,8 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Should be Included (highest priority)
-			assertOperationIncluded(operation, 'Success');
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
 		});
 	});
 
@@ -281,8 +290,9 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// txIndex should point to TX2 (index 1)
-			expect(operation.state?.txIndex).toBe(1);
-			expect(operation.transactions[operation.state?.txIndex!].hash).toBe(
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			expect(emittedOp?.state?.txIndex).toBe(1);
+			expect(emittedOp?.transactions[emittedOp?.state?.txIndex!].hash).toBe(
 				tx2Hash,
 			);
 		});
@@ -321,7 +331,8 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// txIndex should point to first failure (TX1, index 0)
-			expect(operation.state?.txIndex).toBe(0);
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			expect(emittedOp?.state?.txIndex).toBe(0);
 		});
 
 		it('should update txIndex when success arrives after failure', async () => {
@@ -352,14 +363,16 @@ describe('Operation Status Merging', () => {
 			// TX1 fails
 			setup.controller.includeTx(tx1Hash, 'failure');
 			await processAndWait(setup);
-			expect(operation.state?.txIndex).toBe(0);
+			const failedOp = getLatestEmissionForOp(setup, operationId);
+			expect(failedOp?.state?.txIndex).toBe(0);
 
 			// TX2 succeeds
 			setup.controller.includeTx(tx2Hash, 'success');
 			await processAndWait(setup);
 
 			// txIndex should now point to success (TX2)
-			expect(operation.state?.txIndex).toBe(1);
+			const successOp = getLatestEmissionForOp(setup, operationId);
+			expect(successOp?.state?.txIndex).toBe(1);
 		});
 	});
 
@@ -402,7 +415,8 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Operation should be finalized
-			expect(operation.state?.final).toBeDefined();
+			const finalizedOp = getLatestEmissionForOp(setup, operationId);
+			expect(finalizedOp?.state?.final).toBeDefined();
 		});
 	});
 
@@ -417,17 +431,20 @@ describe('Operation Status Merging', () => {
 
 			// With no transactions, the operation stays at initial state
 			// (no txs to process means no status change)
-			expect(op.state).toBeUndefined();
+			// Check emissions - no emission should have occurred for this operation
+			const emittedOp = getLatestEmissionForOp(setup, 'test-empty');
+			expect(emittedOp).toBeUndefined();
 		});
 
 		it('should handle single transaction operation', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {operationId, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
 
 			addToMempool();
 			await processAndWait(setup);
 
-			assertOperationInclusion(operation, 'InMemPool');
-			expect(operation.transactions).toHaveLength(1);
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
+			expect(emittedOp?.transactions).toHaveLength(1);
 		});
 
 		it('should deduplicate transactions with same hash', async () => {
@@ -446,8 +463,13 @@ describe('Operation Status Merging', () => {
 				},
 			});
 
+			// We need to check the emitted operation, but since it's just adding without processing,
+			// let's process and check the emissions
+			await processAndWait(setup);
+
+			const emittedOp = getLatestEmissionForOp(setup, 'dedup-test');
 			// Should still have only one tx
-			expect(op.transactions).toHaveLength(1);
+			expect(emittedOp?.transactions).toHaveLength(1);
 		});
 
 		it('should merge operations with same ID', async () => {
@@ -466,10 +488,14 @@ describe('Operation Status Merging', () => {
 				},
 			});
 
+			// Process and check emissions
+			await processAndWait(setup);
+
+			const emittedOp = getLatestEmissionForOp(setup, 'same-op-id');
 			// Should have both txs
-			expect(op.transactions).toHaveLength(2);
-			expect(op.transactions[0].hash).toBe(tx1.hash);
-			expect(op.transactions[1].hash).toBe(tx2.hash);
+			expect(emittedOp?.transactions).toHaveLength(2);
+			expect(emittedOp?.transactions[0].hash).toBe(tx1.hash);
+			expect(emittedOp?.transactions[1].hash).toBe(tx2.hash);
 		});
 	});
 });

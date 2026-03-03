@@ -4,6 +4,7 @@ import {
 	addSingleTxOperation,
 	addReplacementTx,
 	processAndWait,
+	getLatestEmissionForOp,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
@@ -47,7 +48,8 @@ describe('Transaction Replacement Scenarios', () => {
 			// TX1 appears in mempool
 			addTx1ToMempool();
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Add replacement TX2 with higher gas
 			const {newTx: tx2, addToMempool: addTx2ToMempool} = addReplacementTx(
@@ -67,8 +69,9 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Operation should still be broadcasted with 2 txs
-			assertOperationInclusion(operation, 'InMemPool');
-			assertOperationTxCount(operation, 2);
+			const afterReplacementOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(afterReplacementOp!, 'InMemPool');
+			assertOperationTxCount(afterReplacementOp!, 2);
 
 			// TX2 gets included (this consumes nonce 5)
 			setup.controller.includeTx(tx2Hash, 'success');
@@ -77,11 +80,12 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Operation should be Included/Success with TX2 as winner
-			assertOperationIncluded(operation, 'Success');
-			assertWinningTx(operation, tx2Hash);
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
+			assertWinningTx(includedOp!, tx2Hash);
 
 			// TX1 should be Dropped (nonce consumed)
-			const tx1 = operation.transactions.find((t) => t.hash === tx1Hash);
+			const tx1 = includedOp!.transactions.find((t) => t.hash === tx1Hash);
 			expect(tx1).toBeDefined();
 			assertTxInclusion(tx1!, 'Dropped');
 		});
@@ -123,11 +127,12 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Operation should be Included/Success with TX1 as winner
-			assertOperationIncluded(operation, 'Success');
-			assertWinningTx(operation, tx1Hash);
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
+			assertWinningTx(includedOp!, tx1Hash);
 
 			// TX2 should be Dropped (nonce consumed)
-			const tx2Found = operation.transactions.find((t) => t.hash === tx2Hash);
+			const tx2Found = includedOp!.transactions.find((t) => t.hash === tx2Hash);
 			expect(tx2Found).toBeDefined();
 			assertTxInclusion(tx2Found!, 'Dropped');
 		});
@@ -144,7 +149,8 @@ describe('Transaction Replacement Scenarios', () => {
 			const tx1Hash = operation.transactions[0].hash;
 			addTx1ToMempool();
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Add TX2 - both in mempool simultaneously
 			const {newTx: tx2, addToMempool: addTx2ToMempool} = addReplacementTx(
@@ -160,12 +166,13 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Both txs should be tracked, operation still Broadcasted
-			assertOperationTxCount(operation, 2);
-			assertOperationInclusion(operation, 'InMemPool');
+			const afterAddOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationTxCount(afterAddOp!, 2);
+			assertOperationInclusion(afterAddOp!, 'InMemPool');
 
 			// Both txs should be Broadcasted
-			assertTxInclusion(operation.transactions[0], 'InMemPool');
-			assertTxInclusion(operation.transactions[1], 'InMemPool');
+			assertTxInclusion(afterAddOp!.transactions[0], 'InMemPool');
+			assertTxInclusion(afterAddOp!.transactions[1], 'InMemPool');
 		});
 
 		it('replacement-failure-fallback: TX2 replaces TX1, but TX2 fails', async () => {
@@ -201,8 +208,9 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Operation should be Included/Failure with TX2 as (losing) winner
-			assertOperationIncluded(operation, 'Failure');
-			assertWinningTx(operation, tx2Hash);
+			const failedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(failedOp!, 'Failure');
+			assertWinningTx(failedOp!, tx2Hash);
 		});
 
 		it('replacement-chain-of-three: TX1 → TX2 → TX3 progressive gas bumping', async () => {
@@ -251,8 +259,9 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Operation should have 3 txs
-			assertOperationTxCount(operation, 3);
-			assertOperationInclusion(operation, 'InMemPool');
+			const threeOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationTxCount(threeOp!, 3);
+			assertOperationInclusion(threeOp!, 'InMemPool');
 
 			// TX3 gets included (consumes nonce 5)
 			setup.controller.includeTx(tx3Hash, 'success');
@@ -260,12 +269,13 @@ describe('Transaction Replacement Scenarios', () => {
 			setup.controller.setAccountNonce(TEST_ACCOUNT, nonce + 1);
 			await processAndWait(setup);
 
-			assertOperationIncluded(operation, 'Success');
-			assertWinningTx(operation, tx3Hash);
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
+			assertWinningTx(includedOp!, tx3Hash);
 
 			// TX1 and TX2 should be Dropped (nonce consumed)
-			assertTxInclusion(operation.transactions[0], 'Dropped');
-			assertTxInclusion(operation.transactions[1], 'Dropped');
+			assertTxInclusion(includedOp!.transactions[0], 'Dropped');
+			assertTxInclusion(includedOp!.transactions[1], 'Dropped');
 		});
 	});
 
@@ -298,36 +308,41 @@ describe('Transaction Replacement Scenarios', () => {
 			// Process - both should be discovered simultaneously
 			await processAndWait(setup);
 
-			assertOperationTxCount(operation, 2);
-			assertOperationInclusion(operation, 'InMemPool');
+			const emittedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationTxCount(emittedOp!, 2);
+			assertOperationInclusion(emittedOp!, 'InMemPool');
 		});
 
 		it('replacement-flapping: TX appears/disappears from mempool intermittently', async () => {
 			const nonce = 5;
 
 			// Create operation with TX
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce});
+			const {operation, operationId, addToMempool} = addSingleTxOperation(setup, {nonce});
 			const txHash = operation.transactions[0].hash;
 
 			// Appear in mempool
 			addToMempool();
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(broadcastedOp!, 'InMemPool');
 
 			// Disappear from mempool
 			setup.controller.removeFromMempool(txHash);
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'NotFound');
+			const notFoundOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(notFoundOp!, 'NotFound');
 
 			// Reappear in mempool
 			addToMempool();
 			await processAndWait(setup);
-			assertOperationInclusion(operation, 'InMemPool');
+			const rebroadcastedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationInclusion(rebroadcastedOp!, 'InMemPool');
 
 			// Finally get included
 			setup.controller.includeTx(txHash, 'success');
 			await processAndWait(setup);
-			assertOperationIncluded(operation, 'Success');
+			const includedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(includedOp!, 'Success');
 		});
 	});
 
@@ -367,15 +382,17 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Operation should be Included/Failure (only TX1 included so far)
-			assertOperationIncluded(operation, 'Failure');
+			const failedOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(failedOp!, 'Failure');
 
 			// TX2 succeeds
 			setup.controller.includeTx(tx2Hash, 'success');
 			await processAndWait(setup);
 
 			// Now operation should be Included/Success (success takes priority)
-			assertOperationIncluded(operation, 'Success');
-			assertWinningTx(operation, tx2Hash); // TX2 is the winning tx
+			const successOp = getLatestEmissionForOp(setup, operationId);
+			assertOperationIncluded(successOp!, 'Success');
+			assertWinningTx(successOp!, tx2Hash); // TX2 is the winning tx
 		});
 	});
 });
