@@ -1,4 +1,4 @@
-import {describe, it, expect, beforeAll} from 'vitest';
+import {describe, it, expect, beforeAll, vi} from 'vitest';
 import {
 	createPublicClient,
 	createWalletClient,
@@ -16,6 +16,7 @@ import {foundry} from 'viem/chains';
 import {
 	createTrackedWalletClient,
 	type TrackedWalletClient,
+	type TrackedTransaction,
 } from '../src/index.js';
 import {RPC_URL} from './prool/url.js';
 import {TEST_CONTRACT_ABI, TEST_CONTRACT_BYTECODE} from './utils/data.js';
@@ -389,6 +390,145 @@ describe('TrackedWalletClient', () => {
 			// Verify the transaction came from account2
 			const tx = await publicClient.getTransaction({hash: txHash});
 			expect(tx.from.toLowerCase()).toBe(account2.address.toLowerCase());
+		});
+	});
+
+	describe('onTransactionBroadcasted', () => {
+		it('should emit event when sendTransaction is called', async () => {
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {
+					id: 'event-test-id',
+					title: 'Event Test',
+				},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
+			expect(emittedEvent.txHash).toBe(txHash);
+			expect(emittedEvent.from.toLowerCase()).toBe(account.address.toLowerCase());
+			expect(emittedEvent.metadata.id).toBe('event-test-id');
+			expect(emittedEvent.metadata.title).toBe('Event Test');
+			expect(emittedEvent.trackingId).toBe('event-test-id');
+			expect(typeof emittedEvent.nonce).toBe('number');
+			expect(typeof emittedEvent.initiatedAt).toBe('number');
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+		});
+
+		it('should emit event when writeContract is called', async () => {
+			// Deploy a contract first
+			const deployHash = await walletClient.deployContract({
+				abi: TEST_CONTRACT_ABI,
+				bytecode: TEST_CONTRACT_BYTECODE,
+				args: [account.address, parseEther('1000')],
+			});
+			const receipt = await publicClient.waitForTransactionReceipt({hash: deployHash});
+			const tokenAddress = receipt.contractAddress!;
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				metadata: {
+					title: 'Token Transfer Event Test',
+				},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
+			expect(emittedEvent.txHash).toBe(txHash);
+			expect(emittedEvent.metadata.title).toBe('Token Transfer Event Test');
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+		});
+
+		it('should emit event when sendRawTransaction is called', async () => {
+			const nonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+
+			const signedTx = await walletClient.signTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				nonce,
+				gas: 21000n,
+				maxFeePerGas: parseEther('0.000000002'),
+				maxPriorityFeePerGas: parseEther('0.000000001'),
+			});
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				metadata: {
+					id: 'raw-event-test',
+				},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
+			expect(emittedEvent.txHash).toBe(txHash);
+			expect(emittedEvent.nonce).toBe(nonce);
+			expect(emittedEvent.trackingId).toBe('raw-event-test');
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+		});
+
+		it('should stop receiving events after offTransactionBroadcasted is called', async () => {
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			// First transaction should trigger event
+			await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.001'),
+			});
+			expect(listener).toHaveBeenCalledTimes(1);
+
+			// Unsubscribe
+			trackedClient.offTransactionBroadcasted(listener);
+
+			// Second transaction should NOT trigger event
+			await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.001'),
+			});
+			expect(listener).toHaveBeenCalledTimes(1); // Still 1, not 2
+		});
+
+		it('should generate trackingId when metadata.id is not provided', async () => {
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.001'),
+				// No metadata.id provided
+			});
+
+			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
+			expect(emittedEvent.trackingId).toBeDefined();
+			// UUID format check (basic)
+			expect(emittedEvent.trackingId).toMatch(
+				/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+			);
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
 		});
 	});
 });

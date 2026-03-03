@@ -47,6 +47,10 @@ importers:
         version: 4.0.18(@types/node@25.3.3)
 
   packages/viem-tx-tracker:
+    dependencies:
+      radiate:
+        specifier: ^0.3.2
+        version: 0.3.2
     devDependencies:
       '@types/node':
         specifier: ^25.2.0

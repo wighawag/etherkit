@@ -283,4 +283,22 @@ export interface TrackedWalletClient<
 	 * Returns the transaction receipt after the transaction is confirmed.
 	 */
 	sendRawTransactionSync(args: TrackedRawTransactionParameters): Promise<TransactionReceipt>;
+
+	// ============================================
+	// Event subscription methods
+	// ============================================
+
+	/**
+	 * Subscribe to transaction broadcast events.
+	 * Called immediately after a transaction is successfully broadcast.
+	 * @param listener - Callback function receiving TrackedTransaction
+	 * @returns Unsubscribe function
+	 */
+	onTransactionBroadcasted(listener: (event: TrackedTransaction) => void): () => void;
+
+	/**
+	 * Unsubscribe from transaction broadcast events.
+	 * @param listener - The same listener function passed to onTransactionBroadcasted
+	 */
+	offTransactionBroadcasted(listener: (event: TrackedTransaction) => void): void;
 }

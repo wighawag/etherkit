@@ -14,6 +14,7 @@ import {
 	type Transport,
 	type WalletClient,
 } from 'viem';
+import {Emitter} from 'radiate';
 import type {
 	BlockTag,
 	NonceOption,
@@ -91,6 +92,11 @@ export function createTrackedWalletClient<
 	walletClient: WalletClient<TTransport, TChain, TAccount>,
 	publicClient: PublicClient,
 ): TrackedWalletClient<TTransport, TChain, TAccount> {
+	// Create emitter for transaction broadcast events
+	const emitter = new Emitter<{
+		'transaction:broadcasted': TrackedTransaction;
+	}>();
+
 	/**
 	 * Resolve the nonce to use for a transaction.
 	 *
@@ -256,8 +262,8 @@ export function createTrackedWalletClient<
 		// Create tracked transaction record
 		const trackedTx = createTrackedTransaction(hash, from, actualNonce, metadata, restArgs);
 
-		// TODO: emit('transaction:sent', trackedTx)
-		void trackedTx; // Suppress unused variable warning until emit is implemented
+		// Emit transaction broadcasted event
+		emitter.emit('transaction:broadcasted', trackedTx);
 
 		return result;
 	}
@@ -293,8 +299,8 @@ export function createTrackedWalletClient<
 			{serializedTransaction},
 		);
 
-		// TODO: emit('transaction:sent', trackedTx)
-		void trackedTx; // Suppress unused variable warning until emit is implemented
+		// Emit transaction broadcasted event
+		emitter.emit('transaction:broadcasted', trackedTx);
 
 		return result;
 	}
@@ -416,5 +422,15 @@ export function createTrackedWalletClient<
 				extractHash: (receipt) => receipt.transactionHash,
 			});
 		},
+
+		// ============================================
+		// Event subscription methods
+		// ============================================
+
+		onTransactionBroadcasted: (listener: (event: TrackedTransaction) => void) =>
+			emitter.on('transaction:broadcasted', listener),
+
+		offTransactionBroadcasted: (listener: (event: TrackedTransaction) => void) =>
+			emitter.off('transaction:broadcasted', listener),
 	};
 }

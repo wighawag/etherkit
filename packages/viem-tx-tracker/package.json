@@ -31,6 +31,9 @@
 		"src"
 	],
 	"sideEffects": false,
+	"dependencies": {
+		"radiate": "^0.3.2"
+	},
 	"peerDependencies": {
 		"viem": "^2.46.3"
 	},
