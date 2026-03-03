@@ -1,4 +1,4 @@
-# ethereum-tx-observer
+# @etherkit/tx-observer
 
 A TypeScript library for monitoring Ethereum onchain operations containing multiple transactions, with automatic status merging and finality tracking.
 
@@ -15,14 +15,14 @@ The processor monitors all transactions in an operation and computes a merged st
 ## Installation
 
 ```bash
-npm install ethereum-tx-observer
+npm install @etherkit/tx-observer
 ```
 
 ## Quick Start
 
 ```typescript
-import { initTransactionProcessor } from 'ethereum-tx-observer';
-import type { OnchainOperation, BroadcastedTransaction, OnchainOperationEvent } from 'ethereum-tx-observer';
+import { initTransactionProcessor } from '@etherkit/tx-observer';
+import type { OnchainOperation, BroadcastedTransaction, OnchainOperationEvent } from '@etherkit/tx-observer';
 
 // Initialize the processor
 const processor = initTransactionProcessor({

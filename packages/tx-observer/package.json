@@ -16,13 +16,13 @@
 	],
 	"license": "MIT",
 	"author": "Ronan Sandford",
-	"homepage": "https://github.com/wighawag/ethereum-tx-observer#readme",
+	"homepage": "https://github.com/wighawag/etherkit#readme",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/wighawag/ethereum-tx-observer.git"
+		"url": "git+https://github.com/wighawag/etherkit.git"
 	},
 	"bugs": {
-		"url": "https://github.com/wighawag/ethereum-tx-observer/issues"
+		"url": "https://github.com/wighawag/etherkit/issues"
 	},
 	"publishConfig": {
 		"access": "public"
