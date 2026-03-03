@@ -1,0 +1,72 @@
+{
+	"name": "@etherkit/tx-observer",
+	"version": "0.0.1",
+	"description": "A lightweight TypeScript library for tracking and monitoring Ethereum transactions throughout their lifecycle",
+	"keywords": [
+		"ethereum",
+		"transaction",
+		"observer",
+		"monitor",
+		"tracker",
+		"blockchain",
+		"web3",
+		"typescript",
+		"reactive",
+		"eip-1193"
+	],
+	"license": "MIT",
+	"author": "Ronan Sandford",
+	"homepage": "https://github.com/wighawag/ethereum-tx-observer#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/wighawag/ethereum-tx-observer.git"
+	},
+	"bugs": {
+		"url": "https://github.com/wighawag/ethereum-tx-observer/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"type": "module",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"sideEffects": false,
+	"devDependencies": {
+		"@changesets/cli": "^2.30.0",
+		"@types/lodash-es": "^4.17.12",
+		"@vitest/coverage-v8": "^4.0.18",
+		"as-soon": "^0.1.5",
+		"eip-1193": "^0.6.5",
+		"prettier": "^3.8.0",
+		"typescript": "^5.3.3",
+		"vitest": "^4.0.18"
+	},
+	"dependencies": {
+		"lodash-es": "^4.17.23",
+		"named-logs": "^0.4.1",
+		"radiate": "^0.3.2"
+	},
+	"scripts": {
+		"prepublishOnly": "pnpm format:check && pnpm typecheck && pnpm build",
+		"release": "pnpm prepublishOnly && git push --all && pnpm changeset publish && git push --tags",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"build": "tsc",
+		"dev": "as-soon -w src pnpm build",
+		"typecheck": "tsc --noEmit -p tsconfig-check.json",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage"
+	}
+}
