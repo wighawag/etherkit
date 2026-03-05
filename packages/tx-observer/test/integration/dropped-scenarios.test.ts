@@ -1,29 +1,29 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
 	createTestSetup,
-	addSingleTxOperation,
+	addSingleTxIntent,
 	addReplacementTx,
 	processAndWait,
-	getLatestEmissionForOp,
+	getLatestEmissionForIntent,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
-	assertOperationInclusion,
-	assertOperationDropped,
-	assertOperationFinalized,
+	assertIntentInclusion,
+	assertIntentDropped,
+	assertIntentFinalized,
 	assertTxInclusion,
-	assertOperationTxCount,
-	assertOperationIncluded,
+	assertIntentTxCount,
+	assertIntentIncluded,
 } from '../helpers/assertions.js';
 import {resetHashCounter, TEST_ACCOUNT} from '../fixtures/transactions.js';
-import {resetOpIdCounter} from '../fixtures/operations.js';
+import {resetIntentIdCounter} from '../fixtures/intents.js';
 
 describe('Dropped Transaction Scenarios', () => {
 	let setup: TestSetup;
 
 	beforeEach(() => {
 		resetHashCounter();
-		resetOpIdCounter();
+		resetIntentIdCounter();
 		setup = createTestSetup({finality: 12});
 	});
 
@@ -35,48 +35,48 @@ describe('Dropped Transaction Scenarios', () => {
 		it('dropped-nonce-consumed: Tx nonce is less than account nonce at finalized block', async () => {
 			const nonce = 5;
 
-			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const txHash = operation.transactions[0].hash;
-			const account = operation.transactions[0].from;
+			const txHash = intent.transactions[0].hash;
+			const account = intent.transactions[0].from;
 
 			// Add to mempool and process
 			addToMempool();
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Tx disappears from mempool
 			setup.controller.removeFromMempool(txHash);
 			await processAndWait(setup);
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
 
 			// External transaction consumes the nonce
 			// Set account nonce higher than tx nonce
 			setup.controller.setAccountNonce(account, nonce + 1);
 			await processAndWait(setup);
 
-			// Operation should now be Dropped
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
-			assertOperationFinalized(droppedOp!);
+			// Intent should now be Dropped
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
+			assertIntentFinalized(droppedIntent!);
 		});
 
-		it('dropped-all-txs: All txs in operation are dropped', async () => {
+		it('dropped-all-txs: All txs in intent are dropped', async () => {
 			const nonce = 5;
 
-			// Create operation with TX1
+			// Create intent with TX1
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1ToMempool,
-			} = addSingleTxOperation(setup, {nonce});
-			const tx1Hash = operation.transactions[0].hash;
-			const account = operation.transactions[0].from;
+			} = addSingleTxIntent(setup, {nonce});
+			const tx1Hash = intent.transactions[0].hash;
+			const account = intent.transactions[0].from;
 
 			addTx1ToMempool();
 			await processAndWait(setup);
@@ -84,8 +84,8 @@ describe('Dropped Transaction Scenarios', () => {
 			// Add TX2 with same nonce
 			const {newTx: tx2, addToMempool: addTx2ToMempool} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce,
 					from: account,
@@ -104,24 +104,24 @@ describe('Dropped Transaction Scenarios', () => {
 			setup.controller.setAccountNonce(account, nonce + 1);
 			await processAndWait(setup);
 
-			// Operation should be Dropped (all txs dropped)
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
-			assertTxInclusion(droppedOp!.transactions[0], 'Dropped');
-			assertTxInclusion(droppedOp!.transactions[1], 'Dropped');
+			// Intent should be Dropped (all txs dropped)
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
+			assertTxInclusion(droppedIntent!.transactions[0], 'Dropped');
+			assertTxInclusion(droppedIntent!.transactions[1], 'Dropped');
 		});
 
 		it('dropped-one-of-many: One tx dropped, another still active', async () => {
 			const nonce = 5;
 
-			// Create operation with TX1
+			// Create intent with TX1
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1ToMempool,
-			} = addSingleTxOperation(setup, {nonce});
-			const tx1Hash = operation.transactions[0].hash;
-			const account = operation.transactions[0].from;
+			} = addSingleTxIntent(setup, {nonce});
+			const tx1Hash = intent.transactions[0].hash;
+			const account = intent.transactions[0].from;
 
 			addTx1ToMempool();
 			await processAndWait(setup);
@@ -129,8 +129,8 @@ describe('Dropped Transaction Scenarios', () => {
 			// Add TX2 with different nonce (can both be valid)
 			const {newTx: tx2, addToMempool: addTx2ToMempool} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: nonce + 1,
 					from: account,
@@ -146,70 +146,70 @@ describe('Dropped Transaction Scenarios', () => {
 			await processAndWait(setup);
 
 			// TX1 is dropped but TX2 is still active
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertTxInclusion(emittedOp!.transactions[0], 'Dropped');
-			assertTxInclusion(emittedOp!.transactions[1], 'InMemPool');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertTxInclusion(emittedIntent!.transactions[0], 'Dropped');
+			assertTxInclusion(emittedIntent!.transactions[1], 'InMemPool');
 
-			// Operation should NOT be Dropped - still has active tx
-			assertOperationInclusion(emittedOp!, 'InMemPool');
+			// Intent should NOT be Dropped - still has active tx
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
 		});
 
-		it('dropped-external-tx: Nonce consumed by tx not in our operation', async () => {
+		it('dropped-external-tx: Nonce consumed by tx not in our intent', async () => {
 			const nonce = 5;
 
-			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const account = operation.transactions[0].from;
+			const account = intent.transactions[0].from;
 
 			addToMempool();
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Simulate external tx consuming nonce:
 			// 1. Our tx disappears from mempool
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			// 2. Account nonce advances (external tx was included)
 			setup.controller.setAccountNonce(account, nonce + 1);
 
 			await processAndWait(setup);
 
 			// Our tx should be detected as dropped
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
 		});
 
 		it('dropped-timing: Drop detected with correct final timestamp', async () => {
 			const nonce = 5;
 			const broadcastTimestamp = Date.now();
 
-			// Create operation with tx that has specific broadcast timestamp
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx that has specific broadcast timestamp
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{
 					nonce,
 					broadcastTimestamp,
 				},
 			);
-			const account = operation.transactions[0].from;
+			const account = intent.transactions[0].from;
 
 			addToMempool();
 			await processAndWait(setup);
 
 			// Remove from mempool and consume nonce
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			setup.controller.setAccountNonce(account, nonce + 1);
 			await processAndWait(setup);
 
 			// Should be dropped with final timestamp
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
-			expect(droppedOp?.state?.final).toBeDefined();
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
+			expect(droppedIntent?.state?.final).toBeDefined();
 			// Final should be the broadcast timestamp (from the tx)
-			expect(droppedOp?.state?.final).toBe(broadcastTimestamp);
+			expect(droppedIntent?.state?.final).toBe(broadcastTimestamp);
 		});
 	});
 
@@ -217,97 +217,97 @@ describe('Dropped Transaction Scenarios', () => {
 		it('notfound-temporary: Tx temporarily not visible, nonce still valid', async () => {
 			const nonce = 5;
 
-			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const account = operation.transactions[0].from;
+			const account = intent.transactions[0].from;
 
 			addToMempool();
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Tx disappears but nonce still valid (not consumed)
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			// Account nonce stays at nonce (not advanced)
 			setup.controller.setAccountNonce(account, nonce);
 			await processAndWait(setup);
 
 			// Should be NotFound, not Dropped
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
-			expect(notFoundOp?.state?.final).toBeUndefined();
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
+			expect(notFoundIntent?.state?.final).toBeUndefined();
 		});
 
 		it('notfound-to-dropped: Tx not found, then nonce consumed', async () => {
 			const nonce = 5;
 
-			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const account = operation.transactions[0].from;
+			const account = intent.transactions[0].from;
 
 			addToMempool();
 			await processAndWait(setup);
 
 			// Tx disappears, nonce still valid
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			setup.controller.setAccountNonce(account, nonce);
 			await processAndWait(setup);
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
 
 			// Later, nonce gets consumed
 			setup.controller.setAccountNonce(account, nonce + 1);
 			await processAndWait(setup);
 
 			// Should transition to Dropped
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
 		});
 
 		it('notfound-to-broadcasted: Tx reappears in mempool', async () => {
 			const nonce = 5;
 
-			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
 
 			addToMempool();
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Tx temporarily disappears
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			await processAndWait(setup);
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
 
 			// Tx reappears (e.g., mempool resynced)
 			addToMempool();
 			await processAndWait(setup);
 
 			// Should be back to Broadcasted
-			const rebroadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(rebroadcastedOp!, 'InMemPool');
+			const rebroadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(rebroadcastedIntent!, 'InMemPool');
 		});
 
 		it('notfound-to-included: Tx not in mempool but appears in block', async () => {
 			const nonce = 5;
 
-			// Create operation with tx
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			// Create intent with tx
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
 			await processAndWait(setup);
@@ -315,8 +315,8 @@ describe('Dropped Transaction Scenarios', () => {
 			// Tx disappears from mempool
 			setup.controller.removeFromMempool(txHash);
 			await processAndWait(setup);
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
 
 			// But then it appears in a block (was mined while we weren't looking)
 			// Re-add to mempool so includeTx can find it
@@ -325,33 +325,33 @@ describe('Dropped Transaction Scenarios', () => {
 			await processAndWait(setup);
 
 			// Should be Included
-			const includedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(includedOp!, 'Success');
+			const includedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(includedIntent!, 'Success');
 		});
 	});
 
 	describe('Multiple Account Scenarios', () => {
-		it('should handle operations from different accounts independently', async () => {
+		it('should handle intents from different accounts independently', async () => {
 			const nonce1 = 5;
 			const nonce2 = 3;
 
-			// Operation 1 from account 1
+			// Intent 1 from account 1
 			const {
-				operation: op1,
-				operationId: opId1,
+				intent: intent1,
+				intentId: intentId1,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: nonce1,
 				from: TEST_ACCOUNT,
 			});
 
-			// Operation 2 from account 2
+			// Intent 2 from account 2
 			const account2 = '0xabcdef1234567890123456789012345678901234' as const;
 			const {
-				operation: op2,
-				operationId: opId2,
+				intent: intent2,
+				intentId: intentId2,
 				addToMempool: addTx2,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: nonce2,
 				from: account2,
 			});
@@ -361,21 +361,21 @@ describe('Dropped Transaction Scenarios', () => {
 			await processAndWait(setup);
 
 			// Both should be broadcasted
-			const emittedOp1 = getLatestEmissionForOp(setup, opId1);
-			const emittedOp2 = getLatestEmissionForOp(setup, opId2);
-			assertOperationInclusion(emittedOp1!, 'InMemPool');
-			assertOperationInclusion(emittedOp2!, 'InMemPool');
+			const emittedIntent1 = getLatestEmissionForIntent(setup, intentId1);
+			const emittedIntent2 = getLatestEmissionForIntent(setup, intentId2);
+			assertIntentInclusion(emittedIntent1!, 'InMemPool');
+			assertIntentInclusion(emittedIntent2!, 'InMemPool');
 
-			// Drop op1's tx
-			setup.controller.removeFromMempool(op1.transactions[0].hash);
+			// Drop intent1's tx
+			setup.controller.removeFromMempool(intent1.transactions[0].hash);
 			setup.controller.setAccountNonce(TEST_ACCOUNT, nonce1 + 1);
 			await processAndWait(setup);
 
-			// Op1 should be dropped, op2 still broadcasted
-			const droppedOp1 = getLatestEmissionForOp(setup, opId1);
-			const stillBroadcastedOp2 = getLatestEmissionForOp(setup, opId2);
-			assertOperationDropped(droppedOp1!);
-			assertOperationInclusion(stillBroadcastedOp2!, 'InMemPool');
+			// Intent1 should be dropped, intent2 still broadcasted
+			const droppedIntent1 = getLatestEmissionForIntent(setup, intentId1);
+			const stillBroadcastedIntent2 = getLatestEmissionForIntent(setup, intentId2);
+			assertIntentDropped(droppedIntent1!);
+			assertIntentInclusion(stillBroadcastedIntent2!, 'InMemPool');
 		});
 	});
 
@@ -383,47 +383,47 @@ describe('Dropped Transaction Scenarios', () => {
 		it('should handle nonce 0 correctly', async () => {
 			const nonce = 0;
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const account = operation.transactions[0].from;
+			const account = intent.transactions[0].from;
 
 			addToMempool();
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Remove and consume nonce 0
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			setup.controller.setAccountNonce(account, 1);
 			await processAndWait(setup);
 
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
 		});
 
 		it('should handle very high nonces', async () => {
 			const nonce = 999999;
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce},
 			);
-			const account = operation.transactions[0].from;
+			const account = intent.transactions[0].from;
 
 			addToMempool();
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Remove and consume high nonce
-			setup.controller.removeFromMempool(operation.transactions[0].hash);
+			setup.controller.removeFromMempool(intent.transactions[0].hash);
 			setup.controller.setAccountNonce(account, nonce + 1);
 			await processAndWait(setup);
 
-			const droppedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(droppedOp!);
+			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(droppedIntent!);
 		});
 	});
 });

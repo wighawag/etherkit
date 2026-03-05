@@ -1,18 +1,18 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import {
 	createTestSetup,
-	addSingleTxOperation,
+	addSingleTxIntent,
 	processAndWait,
-	getLatestEmissionForOp,
+	getLatestEmissionForIntent,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {resetHashCounter} from '../fixtures/transactions.js';
-import {resetOpIdCounter} from '../fixtures/operations.js';
+import {resetIntentIdCounter} from '../fixtures/intents.js';
 import {createMockProvider} from '../mocks/MockEIP1193Provider.js';
 import {initTransactionProcessor} from '../../src/index.js';
 import type {
-	OnchainOperation,
-	OnchainOperationEvent,
+	TransactionIntent,
+	TransactionIntentEvent,
 	BroadcastedTransaction,
 } from '../../src/index.js';
 
@@ -21,7 +21,7 @@ describe('Edge Cases for Full Coverage', () => {
 
 	beforeEach(() => {
 		resetHashCounter();
-		resetOpIdCounter();
+		resetIntentIdCounter();
 		setup = createTestSetup({finality: 12});
 	});
 
@@ -55,8 +55,8 @@ describe('Edge Cases for Full Coverage', () => {
 
 			processor.setProvider(customProvider as any);
 
-			// Add an operation
-			const operation: OnchainOperation = {
+			// Add an intent
+			const intent: TransactionIntent = {
 				transactions: [
 					{
 						hash: '0x1234567890123456789012345678901234567890123456789012345678901234',
@@ -65,23 +65,23 @@ describe('Edge Cases for Full Coverage', () => {
 					},
 				],
 			};
-			processor.addMultiple({'test-op': operation});
+			processor.addMultiple({'test-intent': intent});
 
 			// Process should return early when finalized block is null
 			await processor.process();
 
-			// Operation should remain unchanged
-			expect(operation.state).toBeUndefined();
+			// Intent should remain unchanged
+			expect(intent.state).toBeUndefined();
 		});
 	});
 
 	describe('Already Finalized Transaction', () => {
 		it('should skip processing when tx is already included and finalized', async () => {
-			const {operationId, operation, addToMempool} = addSingleTxOperation(
+			const {intentId, intent, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 
 			// Get tx to broadcasted and included
 			addToMempool();
@@ -94,7 +94,7 @@ describe('Edge Cases for Full Coverage', () => {
 			await processAndWait(setup);
 
 			// Verify it's finalized via emissions
-			const latestEmission = getLatestEmissionForOp(setup, operationId);
+			const latestEmission = getLatestEmissionForIntent(setup, intentId);
 			expect(latestEmission?.state?.final).toBeDefined();
 			expect(latestEmission?.state?.inclusion).toBe('Included');
 
@@ -116,11 +116,11 @@ describe('Edge Cases for Full Coverage', () => {
 				provider: provider as any,
 			});
 
-			const emissions: OnchainOperation[] = [];
+			const emissions: TransactionIntent[] = [];
 			processor.onOperationUpdated((event) => {
 				emissions.push({
-					...event.operation,
-					transactions: [...event.operation.transactions],
+					...event.intent,
+					transactions: [...event.intent.transactions],
 				});
 				return () => {};
 			});
@@ -137,7 +137,7 @@ describe('Edge Cases for Full Coverage', () => {
 				maxPriorityFeePerGas: '0x1',
 			});
 
-			const operation: OnchainOperation = {
+			const intent: TransactionIntent = {
 				transactions: [
 					{
 						hash: txHash,
@@ -147,7 +147,7 @@ describe('Edge Cases for Full Coverage', () => {
 					},
 				],
 			};
-			processor.addMultiple({'test-op-retry': operation});
+			processor.addMultiple({'test-intent-retry': intent});
 
 			// First process should find it in mempool
 			await processor.process();
@@ -184,11 +184,11 @@ describe('Edge Cases for Full Coverage', () => {
 	});
 
 	describe('Listener Removal', () => {
-		it('should properly remove operation listener with offOperation', () => {
+		it('should properly remove intent listener with offOperation', () => {
 			const {processor} = setup;
 			let callCount = 0;
 
-			const listener = (_event: OnchainOperationEvent) => {
+			const listener = (_event: TransactionIntentEvent) => {
 				callCount++;
 				return () => {};
 			};
@@ -204,11 +204,11 @@ describe('Edge Cases for Full Coverage', () => {
 			expect(() => processor.offOperationUpdated(listener)).not.toThrow();
 		});
 
-		it('should properly remove operationStatus listener with offOperationStatus', () => {
+		it('should properly remove intentStatus listener with offOperationStatus', () => {
 			const {processor} = setup;
 			let callCount = 0;
 
-			const listener = (_event: OnchainOperationEvent) => {
+			const listener = (_event: TransactionIntentEvent) => {
 				callCount++;
 				return () => {};
 			};
@@ -223,11 +223,11 @@ describe('Edge Cases for Full Coverage', () => {
 			expect(() => processor.offOperationStatusUpdated(listener)).not.toThrow();
 		});
 
-		it('should not emit to removed operation listener', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+		it('should not emit to removed intent listener', async () => {
+			const {intent, addToMempool} = addSingleTxIntent(setup, {nonce: 5});
 
 			let callCount = 0;
-			const listener = (_event: OnchainOperationEvent) => {
+			const listener = (_event: TransactionIntentEvent) => {
 				callCount++;
 				return () => {};
 			};
@@ -245,11 +245,11 @@ describe('Edge Cases for Full Coverage', () => {
 			expect(callCount).toBe(0);
 		});
 
-		it('should not emit to removed operationStatus listener', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+		it('should not emit to removed intentStatus listener', async () => {
+			const {intent, addToMempool} = addSingleTxIntent(setup, {nonce: 5});
 
 			let callCount = 0;
-			const listener = (_event: OnchainOperationEvent) => {
+			const listener = (_event: TransactionIntentEvent) => {
 				callCount++;
 				return () => {};
 			};
@@ -271,7 +271,7 @@ describe('Edge Cases for Full Coverage', () => {
 		it('should handle provider being undefined during processTx', async () => {
 			const {processor} = createTestSetup({finality: 12});
 
-			const operation: OnchainOperation = {
+			const intent: TransactionIntent = {
 				transactions: [
 					{
 						hash: '0x1234567890123456789012345678901234567890123456789012345678901234',
@@ -280,7 +280,7 @@ describe('Edge Cases for Full Coverage', () => {
 					},
 				],
 			};
-			processor.addMultiple({'test-no-provider': operation});
+			processor.addMultiple({'test-no-provider': intent});
 
 			// Set provider to undefined
 			processor.setProvider(undefined as any);
@@ -288,17 +288,17 @@ describe('Edge Cases for Full Coverage', () => {
 			// Process should return early
 			await processor.process();
 
-			// Operation should remain unchanged
-			expect(operation.state).toBeUndefined();
+			// Intent should remain unchanged
+			expect(intent.state).toBeUndefined();
 		});
 	});
 
-	describe('Operation Status Events vs Operation Events', () => {
-		it('should emit operation:status event when status changes', async () => {
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+	describe('Intent Status Events vs Intent Events', () => {
+		it('should emit intent:status event when status changes', async () => {
+			const {intent, addToMempool} = addSingleTxIntent(setup, {nonce: 5});
 
 			let statusEventCount = 0;
-			const statusListener = (_event: OnchainOperationEvent) => {
+			const statusListener = (_event: TransactionIntentEvent) => {
 				statusEventCount++;
 				return () => {};
 			};
@@ -337,8 +337,8 @@ describe('Edge Cases for Full Coverage', () => {
 
 			processor.setProvider(customProvider as any);
 
-			// Add an operation
-			const operation: OnchainOperation = {
+			// Add an intent
+			const intent: TransactionIntent = {
 				transactions: [
 					{
 						hash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -347,17 +347,17 @@ describe('Edge Cases for Full Coverage', () => {
 					},
 				],
 			};
-			processor.addMultiple({'test-op-null-latest': operation});
+			processor.addMultiple({'test-intent-null-latest': intent});
 
 			// Process should return early when latest block is null
 			await processor.process();
 
-			// Operation should remain unchanged
-			expect(operation.state).toBeUndefined();
+			// Intent should remain unchanged
+			expect(intent.state).toBeUndefined();
 		});
 	});
 
-	describe('BeingFetched Status in computeOperationStatus', () => {
+	describe('BeingFetched Status in computeIntentStatus', () => {
 		it('should return BeingFetched when some txs are BeingFetched and none are Broadcasted/Included', async () => {
 			const {provider, controller} = createMockProvider();
 			const processor = initTransactionProcessor({
@@ -365,17 +365,17 @@ describe('Edge Cases for Full Coverage', () => {
 				provider: provider as any,
 			});
 
-			const emissions: OnchainOperation[] = [];
+			const emissions: TransactionIntent[] = [];
 			processor.onOperationUpdated((event) => {
 				emissions.push({
-					...event.operation,
-					transactions: [...event.operation.transactions],
+					...event.intent,
+					transactions: [...event.intent.transactions],
 				});
 				return () => {};
 			});
 
-			// Create an operation with two txs: both without state (BeingFetched)
-			const operation: OnchainOperation = {
+			// Create an intent with two txs: both without state (BeingFetched)
+			const intent: TransactionIntent = {
 				transactions: [
 					{
 						hash: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -389,7 +389,7 @@ describe('Edge Cases for Full Coverage', () => {
 					},
 				],
 			};
-			processor.addMultiple({'test-op-being-fetched': operation});
+			processor.addMultiple({'test-intent-being-fetched': intent});
 
 			// Create a provider where:
 			// - First tx returns null on both fetches -> NotFound
@@ -436,7 +436,7 @@ describe('Edge Cases for Full Coverage', () => {
 			// Process - second tx should trigger line 484 (retry returns tx, skip for now)
 			await processor.process();
 
-			// The operation should emit since at least tx1 changed state (BeingFetched -> NotFound)
+			// The intent should emit since at least tx1 changed state (BeingFetched -> NotFound)
 			// First tx went to NotFound, second tx was skipped (still BeingFetched effectively)
 			const latestEmission = emissions[emissions.length - 1];
 			expect(latestEmission).toBeDefined();

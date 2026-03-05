@@ -1,13 +1,13 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
 	createTestSetup,
-	addSingleTxOperation,
+	addSingleTxIntent,
 	processAndWait,
-	getLatestEmissionForOp,
+	getLatestEmissionForIntent,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
-	assertOperationContainsTx,
+	assertIntentContainsTx,
 	assertLatestEmissionContainsTx,
 	assertEmissionContainsNewTx,
 } from '../helpers/assertions.js';
@@ -17,15 +17,15 @@ import {
 	createMockTx,
 	TEST_ACCOUNT,
 } from '../fixtures/transactions.js';
-import {resetOpIdCounter, createOperation} from '../fixtures/operations.js';
-import type {OnchainOperation} from '../../src/index.js';
+import {resetIntentIdCounter, createIntent} from '../fixtures/intents.js';
+import type {TransactionIntent} from '../../src/index.js';
 
 describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 	let setup: TestSetup;
 
 	beforeEach(() => {
 		resetHashCounter();
-		resetOpIdCounter();
+		resetIntentIdCounter();
 		setup = createTestSetup({finality: 12});
 	});
 
@@ -36,26 +36,26 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 	describe('Event Completeness Guarantee', () => {
 		it('should include newly added tx in all subsequent events', async () => {
 			// This is the critical test for local state handler use case:
-			// After addMultiple() returns, any subsequent operation event MUST include
+			// After addMultiple() returns, any subsequent intent event MUST include
 			// the newly added transaction.
 
-			// Initial operation with TX1
+			// Initial intent with TX1
 			const tx1 = createBroadcastedTx({nonce: 5});
 			const mockTx1 = createMockTx({
 				hash: tx1.hash,
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			setup.controller.addToMempool(mockTx1);
-			setup.processor.addMultiple({op1: op});
+			setup.processor.addMultiple({intent1: intent});
 
 			// Start processing - TX1 becomes Broadcasted
 			await setup.processor.process();
 
 			// LOCAL STATE HANDLER: User bumps gas, saves to disk, then adds
-			// This simulates: localStorage.save(opWithTx2); processor.addMultiple(...)
+			// This simulates: localStorage.save(intentWithTx2); processor.addMultiple(...)
 			const tx2 = createBroadcastedTx({
 				nonce: 5,
 				from: TEST_ACCOUNT,
@@ -67,7 +67,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				maxFeePerGas: '0x77359400', // Higher gas
 			});
 			setup.controller.addToMempool(mockTx2);
-			setup.processor.addMultiple({op1: {...op, transactions: [tx2]}});
+			setup.processor.addMultiple({intent1: {...intent, transactions: [tx2]}});
 
 			// Include TX2 to trigger a state change
 			setup.controller.includeTx(tx2.hash, 'success');
@@ -75,7 +75,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			// Process again - now there's a state change (Broadcasted -> Included)
 			await setup.processor.process();
 
-			// CRITICAL: The emitted operation MUST contain both TXs
+			// CRITICAL: The emitted intent MUST contain both TXs
 			// This allows state handler to safely overwrite local state
 			const lastEmission = setup.emissions[setup.emissions.length - 1];
 			expect(lastEmission.transactions).toHaveLength(2);
@@ -92,10 +92,10 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			setup.controller.addToMempool(mockTx1);
-			setup.processor.addMultiple({op1: op});
+			setup.processor.addMultiple({intent1: intent});
 
 			// Use a hook to inject tx2 mid-process
 			const tx2 = createBroadcastedTx({nonce: 5, from: TEST_ACCOUNT});
@@ -112,7 +112,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 					if (!hookCalled) {
 						hookCalled = true;
 						setup.controller.addToMempool(mockTx2);
-						setup.processor.addMultiple({op1: {...op, transactions: [tx2]}});
+						setup.processor.addMultiple({intent1: {...intent, transactions: [tx2]}});
 					}
 				},
 			);
@@ -139,7 +139,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 	describe('Concurrent Add During Process', () => {
 		it('concurrent-add-during-process: Call add with new tx while process is running', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
@@ -161,33 +161,33 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			});
 			setup.controller.addToMempool(mockTx2);
 			setup.processor.addMultiple({
-				[operationId]: {...operation, transactions: [tx2]},
+				[intentId]: {...intent, transactions: [tx2]},
 			});
 
 			await processPromise;
 
 			// New tx should be in the latest emission
-			const latestEmission = getLatestEmissionForOp(setup, operationId);
+			const latestEmission = getLatestEmissionForIntent(setup, intentId);
 			expect(latestEmission?.transactions.length).toBe(2);
-			assertOperationContainsTx(latestEmission!, tx2.hash);
+			assertIntentContainsTx(latestEmission!, tx2.hash);
 		});
 
-		it('concurrent-add-same-id-during-process: Add operation with same ID during process', async () => {
+		it('concurrent-add-same-id-during-process: Add intent with same ID during process', async () => {
 			const tx1 = createBroadcastedTx({nonce: 5});
 			const mockTx1 = createMockTx({
 				hash: tx1.hash,
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			setup.controller.addToMempool(mockTx1);
-			setup.processor.addMultiple({'shared-id': op});
+			setup.processor.addMultiple({'shared-id': intent});
 
 			// Start process
 			const processPromise = setup.processor.process();
 
-			// Add different tx to same operation ID
+			// Add different tx to same intent ID
 			const tx2 = createBroadcastedTx({nonce: 6, from: TEST_ACCOUNT});
 			const mockTx2 = createMockTx({
 				hash: tx2.hash,
@@ -204,23 +204,23 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			await processPromise;
 
 			// Both txs should be merged in the emission
-			const latestEmission = getLatestEmissionForOp(setup, 'shared-id');
+			const latestEmission = getLatestEmissionForIntent(setup, 'shared-id');
 			expect(latestEmission?.transactions).toHaveLength(2);
-			assertOperationContainsTx(latestEmission!, tx1.hash);
-			assertOperationContainsTx(latestEmission!, tx2.hash);
+			assertIntentContainsTx(latestEmission!, tx1.hash);
+			assertIntentContainsTx(latestEmission!, tx2.hash);
 		});
 
-		it('concurrent-multiple-adds: Multiple rapid adds to same operation', async () => {
+		it('concurrent-multiple-adds: Multiple rapid adds to same intent', async () => {
 			const tx1 = createBroadcastedTx({nonce: 5});
 			const mockTx1 = createMockTx({
 				hash: tx1.hash,
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			setup.controller.addToMempool(mockTx1);
-			setup.processor.addMultiple({'rapid-adds': op});
+			setup.processor.addMultiple({'rapid-adds': intent});
 
 			const processPromise = setup.processor.process();
 
@@ -235,7 +235,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				});
 				setup.controller.addToMempool(mockTx);
 				setup.processor.addMultiple({
-					'rapid-adds': {...op, transactions: [tx]},
+					'rapid-adds': {...intent, transactions: [tx]},
 				});
 				additionalTxs.push(tx);
 			}
@@ -243,19 +243,19 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			await processPromise;
 
 			// All txs should be in the latest emission
-			const latestEmission = getLatestEmissionForOp(setup, 'rapid-adds');
+			const latestEmission = getLatestEmissionForIntent(setup, 'rapid-adds');
 			expect(latestEmission?.transactions.length).toBe(6); // 1 original + 5 added
 			for (const tx of additionalTxs) {
-				assertOperationContainsTx(latestEmission!, tx.hash);
+				assertIntentContainsTx(latestEmission!, tx.hash);
 			}
 		});
 
 		it('concurrent-add-then-include: Add new tx, original tx gets included', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addToMempool();
 
 			// Process to see TX1 broadcasted
@@ -273,7 +273,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			});
 			setup.controller.addToMempool(mockTx2);
 			setup.processor.addMultiple({
-				[operationId]: {...operation, transactions: [tx2]},
+				[intentId]: {...intent, transactions: [tx2]},
 			});
 
 			// TX1 gets included
@@ -284,14 +284,14 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			// Event should contain both txs
 			const finalEmission = setup.emissions[setup.emissions.length - 1];
 			expect(finalEmission.transactions.length).toBe(2);
-			assertOperationContainsTx(finalEmission, tx1Hash);
-			assertOperationContainsTx(finalEmission, tx2.hash);
+			assertIntentContainsTx(finalEmission, tx1Hash);
+			assertIntentContainsTx(finalEmission, tx2.hash);
 		});
 	});
 
 	describe('Remove During Process', () => {
-		it('concurrent-remove-during-process: Remove operation while being processed', async () => {
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+		it('concurrent-remove-during-process: Remove intent while being processed', async () => {
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
@@ -306,7 +306,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				() => {
 					if (!removed) {
 						removed = true;
-						setup.processor.remove(operationId);
+						setup.processor.remove(intentId);
 					}
 				},
 			);
@@ -315,8 +315,8 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 			removeHook();
 
-			// Should not emit events for removed operation
-			// The operation was removed mid-process, so no new emissions should occur
+			// Should not emit events for removed intent
+			// The intent was removed mid-process, so no new emissions should occur
 			expect(setup.emissions.length).toBe(initialEmissionCount);
 		});
 	});
@@ -324,34 +324,34 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 	describe('State Handler Integration Pattern', () => {
 		it('should support save-then-add pattern', async () => {
 			// This test simulates the exact pattern used by local state handlers:
-			// 1. Save operation to disk immediately
+			// 1. Save intent to disk immediately
 			// 2. Call processor.addMultiple()
-			// 3. Listen for operation events
+			// 3. Listen for intent events
 			// 4. Save updated state from events
 
-			const emissions: OnchainOperation[] = [];
+			const emissions: TransactionIntent[] = [];
 
 			// State handler listens for events
 			const cleanup = setup.processor.onOperationUpdated((event) => {
-				emissions.push(structuredClone(event.operation));
+				emissions.push(structuredClone(event.intent));
 				return () => {};
 			});
 
-			// Step 1: Create and "save" operation with TX1
+			// Step 1: Create and "save" intent with TX1
 			const tx1 = createBroadcastedTx({nonce: 5});
 			const mockTx1 = createMockTx({
 				hash: tx1.hash,
 				from: tx1.from,
 				nonce: 5,
 			});
-			const savedOp = createOperation({
+			const savedIntent = createIntent({
 				transactions: [tx1],
 			});
-			// Simulate: localStorage.setItem('ops', JSON.stringify([savedOp]));
+			// Simulate: localStorage.setItem('intents', JSON.stringify([savedIntent]));
 
 			// Step 2: Add to processor
 			setup.controller.addToMempool(mockTx1);
-			setup.processor.addMultiple({'state-handler-op': savedOp});
+			setup.processor.addMultiple({'state-handler-intent': savedIntent});
 
 			await setup.processor.process();
 
@@ -367,13 +367,13 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				maxFeePerGas: '0x77359400',
 			});
 
-			// Simulate: savedOp.transactions.push(tx2);
-			// Simulate: localStorage.setItem('ops', JSON.stringify([savedOp]));
+			// Simulate: savedIntent.transactions.push(tx2);
+			// Simulate: localStorage.setItem('intents', JSON.stringify([savedIntent]));
 
 			// Add to processor
 			setup.controller.addToMempool(mockTx2);
 			setup.processor.addMultiple({
-				'state-handler-op': {...savedOp, transactions: [tx2]},
+				'state-handler-intent': {...savedIntent, transactions: [tx2]},
 			});
 
 			// Include TX2 to trigger a status change
@@ -385,8 +385,8 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			// State handler can safely use this to update local storage
 			const lastEmission = emissions[emissions.length - 1];
 			expect(lastEmission.transactions.length).toBe(2);
-			assertOperationContainsTx(lastEmission, tx1.hash);
-			assertOperationContainsTx(lastEmission, tx2.hash);
+			assertIntentContainsTx(lastEmission, tx1.hash);
+			assertIntentContainsTx(lastEmission, tx2.hash);
 
 			cleanup();
 		});
@@ -401,10 +401,10 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			setup.controller.addToMempool(mockTx1);
-			setup.processor.addMultiple({'no-data-loss': op});
+			setup.processor.addMultiple({'no-data-loss': intent});
 
 			// Process to get first emission
 			await setup.processor.process();
@@ -418,7 +418,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			});
 			setup.controller.addToMempool(mockTx2);
 			setup.processor.addMultiple({
-				'no-data-loss': {...op, transactions: [tx2]},
+				'no-data-loss': {...intent, transactions: [tx2]},
 			});
 
 			// Include TX1 to trigger a status change, which will emit both txs

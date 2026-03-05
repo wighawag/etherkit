@@ -1,24 +1,24 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
 	createTestSetup,
-	addSingleTxOperation,
+	addSingleTxIntent,
 	processAndWait,
-	getLatestEmissionForOp,
+	getLatestEmissionForIntent,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
-	assertOperationInclusion,
-	assertOperationIncluded,
+	assertIntentInclusion,
+	assertIntentIncluded,
 } from '../helpers/assertions.js';
 import {resetHashCounter} from '../fixtures/transactions.js';
-import {resetOpIdCounter} from '../fixtures/operations.js';
+import {resetIntentIdCounter} from '../fixtures/intents.js';
 
 describe('Network Conditions', () => {
 	let setup: TestSetup;
 
 	beforeEach(() => {
 		resetHashCounter();
-		resetOpIdCounter();
+		resetIntentIdCounter();
 	});
 
 	afterEach(() => {
@@ -31,13 +31,13 @@ describe('Network Conditions', () => {
 		it('network-eth-getBlockByNumber-fails: Latest block fetch fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {intent, addToMempool} = addSingleTxIntent(setup, {nonce: 5});
 			addToMempool();
 
 			// Make eth_getBlockByNumber fail
 			setup.controller.setFailMethods(['eth_getBlockByNumber']);
 
-			// Process should throw but operation state should remain unchanged
+			// Process should throw but intent state should remain unchanged
 			await expect(setup.processor.process()).rejects.toThrow();
 
 			// No emissions should have occurred
@@ -47,15 +47,15 @@ describe('Network Conditions', () => {
 		it('network-eth-getTransactionByHash-fails: Tx lookup fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+			const {intentId, addToMempool} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
 			addToMempool();
 
 			// First successful process
 			await processAndWait(setup);
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(emittedOp!, 'InMemPool');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
 
 			// Make tx lookup fail
 			setup.controller.setFailMethods(['eth_getTransactionByHash']);
@@ -64,18 +64,18 @@ describe('Network Conditions', () => {
 			await expect(setup.processor.process()).rejects.toThrow();
 
 			// Most recent emission should still show previous state
-			const lastEmission = getLatestEmissionForOp(setup, operationId);
+			const lastEmission = getLatestEmissionForIntent(setup, intentId);
 			expect(lastEmission?.state?.inclusion).toBe('InMemPool');
 		});
 
 		it('network-eth-getTransactionReceipt-fails: Receipt fetch fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
 			await processAndWait(setup);
@@ -87,19 +87,19 @@ describe('Network Conditions', () => {
 			// Process should throw
 			await expect(setup.processor.process()).rejects.toThrow();
 
-			// Operation should stay at Broadcasted (couldn't confirm inclusion)
-			const lastEmission = getLatestEmissionForOp(setup, operationId);
+			// Intent should stay at Broadcasted (couldn't confirm inclusion)
+			const lastEmission = getLatestEmissionForIntent(setup, intentId);
 			expect(lastEmission?.state?.inclusion).toBe('InMemPool');
 		});
 
 		it('network-intermittent: Random failures with recovery', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
 			// Set 30% failure rate
@@ -127,8 +127,8 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// Should reach correct final state
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(emittedOp!, 'Success');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(emittedIntent!, 'Success');
 		});
 	});
 
@@ -136,14 +136,14 @@ describe('Network Conditions', () => {
 		it('should handle provider disconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+			const {intentId, addToMempool} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
 			addToMempool();
 
 			await processAndWait(setup);
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(emittedOp!, 'InMemPool');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
 
 			// Disconnect
 			setup.controller.simulateDisconnect();
@@ -155,11 +155,11 @@ describe('Network Conditions', () => {
 		it('should recover after reconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
 			await processAndWait(setup);
@@ -178,8 +178,8 @@ describe('Network Conditions', () => {
 
 			// Process should work again
 			await processAndWait(setup);
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(emittedOp!, 'Success');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(emittedIntent!, 'Success');
 		});
 	});
 
@@ -187,11 +187,11 @@ describe('Network Conditions', () => {
 		it('blocks-progression: Blocks advance normally', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
 			await processAndWait(setup);
@@ -203,16 +203,16 @@ describe('Network Conditions', () => {
 			const initialBlockNumber = setup.controller.getBlockNumber();
 
 			// Not finalized yet
-			const includedOp = getLatestEmissionForOp(setup, operationId);
-			expect(includedOp?.state?.final).toBeUndefined();
+			const includedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(includedIntent?.state?.final).toBeUndefined();
 
 			// Advance blocks
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 
 			// Should be finalized
-			const finalizedOp = getLatestEmissionForOp(setup, operationId);
-			expect(finalizedOp?.state?.final).toBeDefined();
+			const finalizedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(finalizedIntent?.state?.final).toBeDefined();
 
 			// Block number should have advanced
 			expect(setup.controller.getBlockNumber()).toBe(initialBlockNumber + 12);
@@ -221,11 +221,11 @@ describe('Network Conditions', () => {
 		it('blocks-finality-boundary: Tx at exactly finality boundary', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
 			await processAndWait(setup);
@@ -236,16 +236,16 @@ describe('Network Conditions', () => {
 			// Advance to one before finality
 			setup.controller.advanceBlocks(11);
 			await processAndWait(setup);
-			const almostFinalOp = getLatestEmissionForOp(setup, operationId);
-			expect(almostFinalOp?.state?.final).toBeUndefined();
+			const almostFinalIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(almostFinalIntent?.state?.final).toBeUndefined();
 
 			// Advance exactly one more block to reach finality
 			setup.controller.advanceBlock();
 			await processAndWait(setup);
 
 			// Should now be finalized
-			const finalizedOp = getLatestEmissionForOp(setup, operationId);
-			expect(finalizedOp?.state?.final).toBeDefined();
+			const finalizedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(finalizedIntent?.state?.final).toBeDefined();
 		});
 	});
 
@@ -253,7 +253,7 @@ describe('Network Conditions', () => {
 		it('should handle latency in responses', async () => {
 			setup = createTestSetup({finality: 12, latencyMs: 50});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+			const {intentId, addToMempool} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
 			addToMempool();
@@ -266,14 +266,14 @@ describe('Network Conditions', () => {
 			// Multiple RPC calls means multiple latency delays
 			expect(endTime - startTime).toBeGreaterThanOrEqual(50);
 
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(emittedOp!, 'InMemPool');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
 		});
 
 		it('should work with dynamic latency changes', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
@@ -281,18 +281,18 @@ describe('Network Conditions', () => {
 
 			// Start with no latency
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Add latency mid-test
 			setup.controller.setLatency(10);
 
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			setup.controller.includeTx(txHash, 'success');
 
 			await processAndWait(setup);
-			const includedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(includedOp!, 'Success');
+			const includedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(includedIntent!, 'Success');
 		});
 	});
 
@@ -300,7 +300,7 @@ describe('Network Conditions', () => {
 		it('timing-rapid-process-calls: Multiple process calls in quick succession', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+			const {intentId, addToMempool} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
 			addToMempool();
@@ -315,8 +315,8 @@ describe('Network Conditions', () => {
 			await Promise.all(promises);
 
 			// Should reach correct state without issues
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(emittedOp!, 'InMemPool');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
 
 			// Should not have duplicate emissions for same state
 			const broadcastedEmissions = setup.emissions.filter(
@@ -331,16 +331,16 @@ describe('Network Conditions', () => {
 		it('timing-stale-data: Process uses fresh data each call', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, operationId, addToMempool} = addSingleTxOperation(
+			const {intent, intentId, addToMempool} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
-			const txHash = operation.transactions[0].hash;
+			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
 			await processAndWait(setup);
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Remove from mempool between process calls
 			setup.controller.removeFromMempool(txHash);
@@ -348,41 +348,41 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// Should reflect current state (NotFound), not stale (Broadcasted)
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
 		});
 	});
 
-	describe('Clear and Remove Operations', () => {
+	describe('Clear and Remove Intents', () => {
 		it('should handle clear during idle', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operation, addToMempool} = addSingleTxOperation(setup, {nonce: 5});
+			const {intent, addToMempool} = addSingleTxIntent(setup, {nonce: 5});
 			addToMempool();
 
 			await processAndWait(setup);
 			const emissionCountBefore = setup.emissions.length;
 
-			// Clear all operations
+			// Clear all intents
 			setup.processor.clear();
 
-			// Process should work but do nothing (no operations to process)
+			// Process should work but do nothing (no intents to process)
 			await processAndWait(setup);
 
 			// No new emissions after clear (count should be same as before)
 			expect(setup.emissions.length).toBe(emissionCountBefore);
 		});
 
-		it('should handle remove specific operation', async () => {
+		it('should handle remove specific intent', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {operationId: op1Id, addToMempool: addTx1} = addSingleTxOperation(
+			const {intentId: intent1Id, addToMempool: addTx1} = addSingleTxIntent(
 				setup,
 				{nonce: 5},
 			);
 			addTx1();
 
-			const {operationId: op2Id, addToMempool: addTx2} = addSingleTxOperation(
+			const {intentId: intent2Id, addToMempool: addTx2} = addSingleTxIntent(
 				setup,
 				{nonce: 6},
 			);
@@ -391,22 +391,22 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// Both should be broadcasted
-			const emittedOp1 = getLatestEmissionForOp(setup, op1Id);
-			const emittedOp2 = getLatestEmissionForOp(setup, op2Id);
-			assertOperationInclusion(emittedOp1!, 'InMemPool');
-			assertOperationInclusion(emittedOp2!, 'InMemPool');
+			const emittedIntent1 = getLatestEmissionForIntent(setup, intent1Id);
+			const emittedIntent2 = getLatestEmissionForIntent(setup, intent2Id);
+			assertIntentInclusion(emittedIntent1!, 'InMemPool');
+			assertIntentInclusion(emittedIntent2!, 'InMemPool');
 
 			const emissionsBeforeRemove = setup.emissions.length;
 
-			// Remove op1
-			setup.processor.remove(op1Id);
+			// Remove intent1
+			setup.processor.remove(intent1Id);
 
 			// Process again
 			await processAndWait(setup);
 
-			// op2 should still work (no state change so no emission)
-			const stillBroadcastedOp2 = getLatestEmissionForOp(setup, op2Id);
-			assertOperationInclusion(stillBroadcastedOp2!, 'InMemPool');
+			// intent2 should still work (no state change so no emission)
+			const stillBroadcastedIntent2 = getLatestEmissionForIntent(setup, intent2Id);
+			assertIntentInclusion(stillBroadcastedIntent2!, 'InMemPool');
 		});
 	});
 });

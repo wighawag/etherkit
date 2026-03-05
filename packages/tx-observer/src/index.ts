@@ -40,33 +40,33 @@ export type BroadcastedTransaction = {
 };
 
 /**
- * Operation status represents the merged status of all transactions in an operation.
- * - txIndex: index into transactions[] for the "winning" tx (first success, or first failure if all failed)
- * - The hash can be retrieved via: operation.transactions[operation.txIndex].hash
+ * transaction's intent status represents the merged status of all transactions in an intent.
+ * - attemptIndex: index into transactions[] for the "winning" tx (first success, or first failure if all failed)
+ * - The hash can be retrieved via: intent.transactions[intent.attemptIndex].hash
  */
-export type OnchainOperationStatus =
+export type TransactionIntentStatus =
 	| {
 			inclusion: 'InMemPool' | 'NotFound';
 			final: undefined;
 			status: undefined;
-			txIndex: undefined;
+			attemptIndex: undefined;
 	  }
 	| {
 			inclusion: 'Dropped';
 			final?: number;
 			status: undefined;
-			txIndex: undefined;
+			attemptIndex: undefined;
 	  }
 	| {
 			inclusion: 'Included';
 			status: 'Failure' | 'Success';
 			final?: number;
-			txIndex: number;
+			attemptIndex: number;
 	  };
 
-export type OnchainOperation = {
+export type TransactionIntent = {
 	transactions: BroadcastedTransaction[];
-	state?: OnchainOperationStatus;
+	state?: TransactionIntentStatus;
 
 	// TODO, use these to detect out of band inclusion
 	expectedUpdate?:
@@ -79,45 +79,47 @@ export type OnchainOperation = {
 };
 
 /**
- * Event payload that includes both the operation ID and the operation data.
+ * Event payload that includes both the intent ID and the intent data.
  */
-export type OnchainOperationEvent = {
+export type TransactionIntentEvent = {
 	id: string;
-	operation: OnchainOperation;
+	intent: TransactionIntent;
 };
 
 /**
- * Event payload for adding operations
+ * Event payload for adding intents
  */
-export type OnchainOperationsAddedEvent = {
-	[id: string]: OnchainOperation;
+export type TransactionIntentsAddedEvent = {
+	[id: string]: TransactionIntent;
 };
 
 /**
- * Compute the merged operation status from all its transactions.
+ * Compute the merged intent status from all its transactions.
  *
  * Priority order (highest wins):
  * 1. Included - At least one tx is included in a block
  * 2. Broadcasted - At least one tx is active in mempool
  * 4. NotFound - None visible in mempool
- * 5. Dropped - ALL txs are dropped (operation failed)
+ * 5. Dropped - ALL txs are dropped (intent failed)
  *
  * For Included status:
  * - If ANY tx succeeded → status: Success
  * - If ALL included txs failed → status: Failure
- * - txIndex points to first success, or first failure if all failed
+ * - attemptIndex points to first success, or first failure if all failed
  */
-function computeOperationStatus(op: OnchainOperation): OnchainOperationStatus {
-	const txs = op.transactions;
+function computeIntentStatus(
+	intent: TransactionIntent,
+): TransactionIntentStatus {
+	const transactions = intent.transactions;
 
 	// Check for any Included txs - find index of first success, or first failure
 	let winningIndex = -1;
 	let hasSuccess = false;
 
-	for (let i = 0; i < txs.length; i++) {
-		const tx = txs[i];
-		if (tx.state?.inclusion === 'Included') {
-			if (tx.state.status === 'Success') {
+	for (let i = 0; i < transactions.length; i++) {
+		const transaction = transactions[i];
+		if (transaction.state?.inclusion === 'Included') {
+			if (transaction.state.status === 'Success') {
 				winningIndex = i;
 				hasSuccess = true;
 				break; // First success wins
@@ -129,12 +131,17 @@ function computeOperationStatus(op: OnchainOperation): OnchainOperationStatus {
 
 	if (winningIndex >= 0) {
 		// Determine finality - use the most final timestamp from included txs
-		const includedTxs = txs.filter((tx) => tx.state?.inclusion === 'Included');
+		const includedAttempts = transactions.filter(
+			(transaction) => transaction.state?.inclusion === 'Included',
+		);
 		let finalTimestamp: number | undefined;
-		for (const tx of includedTxs) {
-			if (tx.state?.final !== undefined) {
-				if (finalTimestamp === undefined || tx.state.final > finalTimestamp) {
-					finalTimestamp = tx.state.final;
+		for (const transaction of includedAttempts) {
+			if (transaction.state?.final !== undefined) {
+				if (
+					finalTimestamp === undefined ||
+					transaction.state.final > finalTimestamp
+				) {
+					finalTimestamp = transaction.state.final;
 				}
 			}
 		}
@@ -143,36 +150,47 @@ function computeOperationStatus(op: OnchainOperation): OnchainOperationStatus {
 			inclusion: 'Included',
 			status: hasSuccess ? 'Success' : 'Failure',
 			final: finalTimestamp,
-			txIndex: winningIndex,
+			attemptIndex: winningIndex,
 		};
 	}
 
 	// Check for any Broadcasted
-	if (txs.some((tx) => tx.state?.inclusion === 'InMemPool')) {
+	if (
+		transactions.some(
+			(transaction) => transaction.state?.inclusion === 'InMemPool',
+		)
+	) {
 		return {
 			inclusion: 'InMemPool',
 			final: undefined,
 			status: undefined,
-			txIndex: undefined,
+			attemptIndex: undefined,
 		};
 	}
 
 	// Check for any NotFound
-	if (txs.some((tx) => tx.state?.inclusion === 'NotFound')) {
+	if (
+		transactions.some(
+			(transaction) => transaction.state?.inclusion === 'NotFound',
+		)
+	) {
 		return {
 			inclusion: 'NotFound',
 			final: undefined,
 			status: undefined,
-			txIndex: undefined,
+			attemptIndex: undefined,
 		};
 	}
 
 	// All must be Dropped - find earliest dropped timestamp
 	let droppedTimestamp: number | undefined;
-	for (const tx of txs) {
-		if (tx.state?.final !== undefined) {
-			if (droppedTimestamp === undefined || tx.state.final < droppedTimestamp) {
-				droppedTimestamp = tx.state.final;
+	for (const transaction of transactions) {
+		if (transaction.state?.final !== undefined) {
+			if (
+				droppedTimestamp === undefined ||
+				transaction.state.final < droppedTimestamp
+			) {
+				droppedTimestamp = transaction.state.final;
 			}
 		}
 	}
@@ -181,42 +199,42 @@ function computeOperationStatus(op: OnchainOperation): OnchainOperationStatus {
 		inclusion: 'Dropped',
 		final: droppedTimestamp,
 		status: undefined,
-		txIndex: undefined,
+		attemptIndex: undefined,
 	};
 }
 
 /**
- * Update an operation's status fields from a computed status.
- * This mutates the operation in place.
+ * Update an intent's status fields from a computed status.
+ * This mutates the intent in place.
  */
-function applyOperationStatus(
-	op: OnchainOperation,
-	newState: OnchainOperationStatus,
+function applyIntentStatus(
+	intent: TransactionIntent,
+	newState: TransactionIntentStatus,
 ): void {
-	if (!op.state) {
-		op.state = newState;
+	if (!intent.state) {
+		intent.state = newState;
 	}
-	op.state.inclusion = newState.inclusion;
-	op.state.final = newState.final;
-	op.state.status = newState.status;
-	op.state.txIndex = newState.txIndex;
+	intent.state.inclusion = newState.inclusion;
+	intent.state.final = newState.final;
+	intent.state.status = newState.status;
+	intent.state.attemptIndex = newState.attemptIndex;
 }
 
 /**
- * Check if operation status has changed.
+ * Check if intent status has changed.
  */
-function hasOperationStatusChanged(
-	op: OnchainOperation,
-	newStatus: OnchainOperationStatus,
+function hasIntentStatusChanged(
+	intent: TransactionIntent,
+	newStatus: TransactionIntentStatus,
 ): boolean {
-	if (!op.state) {
+	if (!intent.state) {
 		return true;
 	}
 	return (
-		op.state.inclusion !== newStatus.inclusion ||
-		op.state.final !== newStatus.final ||
-		op.state.status !== newStatus.status ||
-		op.state.txIndex !== newStatus.txIndex
+		intent.state.inclusion !== newStatus.inclusion ||
+		intent.state.final !== newStatus.final ||
+		intent.state.status !== newStatus.status ||
+		intent.state.attemptIndex !== newStatus.attemptIndex
 	);
 }
 
@@ -226,77 +244,79 @@ export function initTransactionProcessor(config: {
 	provider?: EIP1193ProviderWithoutEvents;
 }) {
 	const emitter = new Emitter<{
-		// Fires when any TX in the operation changes (for persistence)
-		operation: OnchainOperationEvent;
-		// Fires only when operation status changes (for UI/state updates)
-		'operation:status': OnchainOperationEvent;
-		'operations:added': OnchainOperationsAddedEvent;
+		// Fires when any TX in the intent changes (for persistence)
+		intent: TransactionIntentEvent;
+		// Fires only when intent status changes (for UI/state updates)
+		'intent:status': TransactionIntentEvent;
+		'intents:added': TransactionIntentsAddedEvent;
 	}>();
 
 	let provider: EIP1193ProviderWithoutEvents | undefined = config.provider;
-	const opsById: {[id: string]: OnchainOperation} = {};
+	const intentsById: {[id: string]: TransactionIntent} = {};
 	// Maintain tx hash lookup for efficient updates
-	const txToOp: {[txHash: string]: OnchainOperation} = {};
+	const txToIntent: {[txHash: string]: TransactionIntent} = {};
 
-	function addMultiple(operations: {[id: string]: OnchainOperation}) {
-		logger.debug(`adding ${Object.keys(operations).length} operations...`);
-		for (const entry of Object.entries(operations)) {
+	function addMultiple(intents: {[id: string]: TransactionIntent}) {
+		logger.debug(`adding ${Object.keys(intents).length} intents...`);
+		for (const entry of Object.entries(intents)) {
 			_add(entry[0], entry[1]);
 		}
-		if (emitter.hasListeners('operations:added')) {
-			emitter.emit('operations:added', structuredClone(operations));
+		if (emitter.hasListeners('intents:added')) {
+			emitter.emit('intents:added', structuredClone(intents));
 		}
 	}
 
-	function _add(id: string, operationToAdd: OnchainOperation) {
-		const operation = structuredClone(operationToAdd);
-		logger.debug(`adding operation ${id}...`);
-		const existing = opsById[id];
+	function _add(id: string, intentToAdd: TransactionIntent) {
+		const intent = structuredClone(intentToAdd);
+		logger.debug(`adding intent ${id}...`);
+		const existing = intentsById[id];
 		if (!existing) {
-			opsById[id] = operation;
-			// Index all tx hashes for this operation
-			for (const tx of operation.transactions) {
-				txToOp[tx.hash] = operation;
+			intentsById[id] = intent;
+			// Index all tx hashes for this intent
+			for (const transaction of intent.transactions) {
+				txToIntent[transaction.hash] = intent;
 			}
 		} else {
-			// Update existing operation - merge transactions
-			for (const tx of operation.transactions) {
-				if (!txToOp[tx.hash]) {
-					existing.transactions.push(tx);
-					txToOp[tx.hash] = existing;
+			// Update existing intent - merge transactions
+			for (const transaction of intent.transactions) {
+				if (!txToIntent[transaction.hash]) {
+					existing.transactions.push(transaction);
+					txToIntent[transaction.hash] = existing;
 				}
 			}
 		}
 	}
 
-	function add(id: string, operationToAdd: OnchainOperation) {
-		_add(id, operationToAdd);
-		if (emitter.hasListeners('operations:added')) {
-			emitter.emit('operations:added', {[id]: structuredClone(operationToAdd)});
+	function add(id: string, intentToAdd: TransactionIntent) {
+		_add(id, intentToAdd);
+		if (emitter.hasListeners('intents:added')) {
+			emitter.emit('intents:added', {
+				[id]: structuredClone(intentToAdd),
+			});
 		}
 	}
 
 	function clear() {
-		logger.debug(`clearing operations...`);
-		const keys = Object.keys(opsById);
+		logger.debug(`clearing transactions...`);
+		const keys = Object.keys(intentsById);
 		for (const key of keys) {
-			const op = opsById[key];
-			for (const tx of op.transactions) {
-				delete txToOp[tx.hash];
+			const intent = intentsById[key];
+			for (const transaction of intent.transactions) {
+				delete txToIntent[transaction.hash];
 			}
-			delete opsById[key];
+			delete intentsById[key];
 		}
 	}
 
-	function remove(operationId: string) {
-		logger.debug(`removing operation ${operationId}...`);
-		const op = opsById[operationId];
-		if (op) {
-			// Remove tx hash mappings
-			for (const tx of op.transactions) {
-				delete txToOp[tx.hash];
+	function remove(intentId: string) {
+		logger.debug(`removing intent ${intentId}...`);
+		const intent = intentsById[intentId];
+		if (intent) {
+			// Remove transaction hash mappings
+			for (const transaction of intent.transactions) {
+				delete txToIntent[transaction.hash];
 			}
-			delete opsById[operationId];
+			delete intentsById[intentId];
 		}
 	}
 
@@ -336,8 +356,8 @@ export function initTransactionProcessor(config: {
 
 		logger.debug(`latestFinalizedBlock: ${latestFinalizedBlockNumber}`);
 
-		for (const id of Object.keys(opsById)) {
-			await processOperation(id, opsById[id], {
+		for (const id of Object.keys(intentsById)) {
+			await processTransactionIntent(id, intentsById[id], {
 				latestBlockNumber,
 				latestBlockTime,
 				latestFinalizedBlock,
@@ -348,9 +368,9 @@ export function initTransactionProcessor(config: {
 		}
 	}
 
-	async function processOperation(
+	async function processTransactionIntent(
 		id: string,
-		op: OnchainOperation,
+		intent: TransactionIntent,
 		{
 			latestBlockNumber,
 			latestBlockTime,
@@ -371,13 +391,13 @@ export function initTransactionProcessor(config: {
 
 		// CONSISTENCY GUARANTEE: Snapshot transactions to avoid mid-iteration modifications
 		// This ensures stable iteration while allowing new txs to be added via addMultiple()
-		const txsSnapshot = [...op.transactions];
-		const initialTxCount = txsSnapshot.length;
+		const attemptsSnapshot = [...intent.transactions];
+		const initialTxCount = attemptsSnapshot.length;
 
 		// Process each transaction from the snapshot, track if any changed
 		let anyTxChanged = false;
-		for (const tx of txsSnapshot) {
-			const changed = await processTx(tx, {
+		for (const transaction of attemptsSnapshot) {
+			const changed = await processAttempt(transaction, {
 				latestBlockNumber,
 				latestBlockTime,
 				latestFinalizedBlock,
@@ -387,40 +407,43 @@ export function initTransactionProcessor(config: {
 		}
 
 		// Check if new txs were added during processing
-		const txsWereAdded = op.transactions.length > initialTxCount;
+		const txsWereAdded = intent.transactions.length > initialTxCount;
 
 		// Only recompute status if we processed something or new txs were added
-		// This prevents spurious emissions for empty operations
+		// This prevents spurious emissions for empty transactions
 		if (initialTxCount === 0 && !txsWereAdded) {
 			return false;
 		}
 
 		// IMPORTANT: Compute status from ALL current txs, not just snapshot
 		// This ensures txs added during processing are included in status computation
-		// and emitted operations always include all known transactions
-		const newStatus = computeOperationStatus(op);
-		const statusChanged = hasOperationStatusChanged(op, newStatus);
+		// and emitted transactions always include all known transactions
+		const newStatus = computeIntentStatus(intent);
+		const statusChanged = hasIntentStatusChanged(intent, newStatus);
 
-		// Update operation status fields if changed
+		// Update intent status fields if changed
 		if (statusChanged) {
-			applyOperationStatus(op, newStatus);
+			applyIntentStatus(intent, newStatus);
 		}
 
 		// Emit events if still tracked
-		if (opsById[id]) {
-			// Emit 'operation' for any TX change (for persistence)
+		if (intentsById[id]) {
+			// Emit 'intent' for any TX change (for persistence)
 			if (anyTxChanged || txsWereAdded) {
-				if (emitter.hasListeners('operation')) {
-					emitter.emit('operation', {id, operation: structuredClone(op)});
+				if (emitter.hasListeners('intent')) {
+					emitter.emit('intent', {
+						id,
+						intent: structuredClone(intent),
+					});
 				}
 			}
 
-			// Emit 'operation:status' only when operation status changes (for UI/state)
+			// Emit 'intent:status' only when intent status changes (for UI/state)
 			if (statusChanged) {
-				if (emitter.hasListeners('operation:status')) {
-					emitter.emit('operation:status', {
+				if (emitter.hasListeners('intent:status')) {
+					emitter.emit('intent:status', {
 						id,
-						operation: structuredClone(op),
+						intent: structuredClone(intent),
 					});
 				}
 			}
@@ -429,8 +452,8 @@ export function initTransactionProcessor(config: {
 		return anyTxChanged || statusChanged;
 	}
 
-	async function processTx(
-		tx: BroadcastedTransaction,
+	async function processAttempt(
+		transaction: BroadcastedTransaction,
 		{
 			latestBlockNumber,
 			latestBlockTime,
@@ -449,8 +472,8 @@ export function initTransactionProcessor(config: {
 		}
 		/* v8 ignore stop */
 
-		if (tx.state && tx.state.inclusion === 'Included') {
-			if (tx.state.final) {
+		if (transaction.state && transaction.state.inclusion === 'Included') {
+			if (transaction.state.final) {
 				// TODO auto remove ?
 				return false;
 			}
@@ -458,7 +481,7 @@ export function initTransactionProcessor(config: {
 
 		const txFromPeers = await provider.request({
 			method: 'eth_getTransactionByHash',
-			params: [tx.hash],
+			params: [transaction.hash],
 		});
 
 		let changes = false;
@@ -467,7 +490,7 @@ export function initTransactionProcessor(config: {
 			if (txFromPeers.blockNumber) {
 				receipt = await provider.request({
 					method: 'eth_getTransactionReceipt',
-					params: [tx.hash],
+					params: [transaction.hash],
 				});
 			}
 			if (receipt) {
@@ -480,18 +503,18 @@ export function initTransactionProcessor(config: {
 					const blockTimestamp = Number(block.timestamp);
 					const is_final = latestBlockNumber - blockNumber >= config.finality;
 					if (receipt.status === '0x0' || receipt.status === '0x00') {
-						if (tx.state) {
+						if (transaction.state) {
 							if (
-								tx.state.status !== 'Failure' ||
-								tx.state.final !== blockTimestamp
+								transaction.state.status !== 'Failure' ||
+								transaction.state.final !== blockTimestamp
 							) {
-								tx.state.inclusion = 'Included';
-								tx.state.status = 'Failure';
-								tx.state.final = is_final ? blockTimestamp : undefined;
+								transaction.state.inclusion = 'Included';
+								transaction.state.status = 'Failure';
+								transaction.state.final = is_final ? blockTimestamp : undefined;
 								changes = true;
 							}
 						} else {
-							tx.state = {
+							transaction.state = {
 								inclusion: 'Included',
 								status: 'Failure',
 								final: is_final ? blockTimestamp : undefined,
@@ -499,18 +522,18 @@ export function initTransactionProcessor(config: {
 							changes = true;
 						}
 					} else {
-						if (tx.state) {
+						if (transaction.state) {
 							if (
-								tx.state.status !== 'Success' ||
-								tx.state.final !== blockTimestamp
+								transaction.state.status !== 'Success' ||
+								transaction.state.final !== blockTimestamp
 							) {
-								tx.state.inclusion = 'Included';
-								tx.state.status = 'Success';
-								tx.state.final = is_final ? blockTimestamp : undefined;
+								transaction.state.inclusion = 'Included';
+								transaction.state.status = 'Success';
+								transaction.state.final = is_final ? blockTimestamp : undefined;
 								changes = true;
 							}
 						} else {
-							tx.state = {
+							transaction.state = {
 								inclusion: 'Included',
 								status: 'Success',
 								final: is_final ? blockTimestamp : undefined,
@@ -520,21 +543,24 @@ export function initTransactionProcessor(config: {
 					}
 				}
 			} else {
-				if (tx.state) {
-					if (tx.state && tx.state.inclusion !== 'InMemPool') {
-						tx.state.inclusion = 'InMemPool';
-						tx.state.final = undefined;
-						tx.state.status = undefined;
-						tx.nonce = Number(txFromPeers.nonce);
+				if (transaction.state) {
+					if (
+						transaction.state &&
+						transaction.state.inclusion !== 'InMemPool'
+					) {
+						transaction.state.inclusion = 'InMemPool';
+						transaction.state.final = undefined;
+						transaction.state.status = undefined;
+						transaction.nonce = Number(txFromPeers.nonce);
 						changes = true;
 					}
 				} else {
-					tx.state = {
+					transaction.state = {
 						inclusion: 'InMemPool',
 						final: undefined,
 						status: undefined,
 					};
-					tx.nonce = Number(txFromPeers.nonce);
+					transaction.nonce = Number(txFromPeers.nonce);
 					changes = true;
 				}
 			}
@@ -542,14 +568,14 @@ export function initTransactionProcessor(config: {
 			// NOTE: we feteched it again to ensure the call was not lost
 			const txFromPeers = await provider.request({
 				method: 'eth_getTransactionByHash',
-				params: [tx.hash],
+				params: [transaction.hash],
 			});
 			if (txFromPeers) {
 				return false; // we skip it for now
 			}
 
 			// TODO cache finalityNonce
-			const account = tx.from;
+			const account = transaction.from;
 			const tranactionCount = await provider.request({
 				method: 'eth_getTransactionCount',
 				params: [account, latestFinalizedBlock.hash],
@@ -558,38 +584,44 @@ export function initTransactionProcessor(config: {
 
 			logger.debug(`finalityNonce: ${finalityNonce}`);
 
-			if (typeof tx.nonce === 'number' && finalityNonce > tx.nonce) {
-				if (tx.state) {
-					if (tx.state.inclusion !== 'Dropped' || !tx.state.final) {
-						tx.state.inclusion = 'Dropped';
-						tx.state.final =
-							tx.broadcastTimestamp !== undefined
-								? tx.broadcastTimestamp
+			if (
+				typeof transaction.nonce === 'number' &&
+				finalityNonce > transaction.nonce
+			) {
+				if (transaction.state) {
+					if (
+						transaction.state.inclusion !== 'Dropped' ||
+						!transaction.state.final
+					) {
+						transaction.state.inclusion = 'Dropped';
+						transaction.state.final =
+							transaction.broadcastTimestamp !== undefined
+								? transaction.broadcastTimestamp
 								: latestFinalizedBlockTime;
-						tx.state.status = undefined;
+						transaction.state.status = undefined;
 						changes = true;
 					}
 				} else {
-					tx.state = {
+					transaction.state = {
 						inclusion: 'Dropped',
 						status: undefined,
 						final:
-							tx.broadcastTimestamp !== undefined
-								? tx.broadcastTimestamp
+							transaction.broadcastTimestamp !== undefined
+								? transaction.broadcastTimestamp
 								: latestFinalizedBlockTime,
 					};
 					changes = true;
 				}
 			} else {
-				if (tx.state) {
-					if (tx.state.inclusion !== 'NotFound') {
-						tx.state.inclusion = 'NotFound';
-						tx.state.final = undefined;
-						tx.state.status = undefined;
+				if (transaction.state) {
+					if (transaction.state.inclusion !== 'NotFound') {
+						transaction.state.inclusion = 'NotFound';
+						transaction.state.final = undefined;
+						transaction.state.status = undefined;
 						changes = true;
 					}
 				} else {
-					tx.state = {
+					transaction.state = {
 						inclusion: 'NotFound',
 						final: undefined,
 						status: undefined,
@@ -617,25 +649,25 @@ export function initTransactionProcessor(config: {
 			: process) as typeof process,
 
 		onOperationsAdded: (
-			listener: (event: OnchainOperationsAddedEvent) => () => void,
-		) => emitter.on('operations:added', listener),
+			listener: (event: TransactionIntentsAddedEvent) => () => void,
+		) => emitter.on('intents:added', listener),
 		offOperationsAdded: (
-			listener: (event: OnchainOperationsAddedEvent) => void,
-		) => emitter.off('operations:added', listener),
+			listener: (event: TransactionIntentsAddedEvent) => void,
+		) => emitter.off('intents:added', listener),
 
-		// 'onOperationUpdatedUpdated' fires when any TX in the operation changes (for persistence)
+		// 'onOperationUpdatedUpdated' fires when any TX in the intent changes (for persistence)
 		onOperationUpdated: (
-			listener: (event: OnchainOperationEvent) => () => void,
-		) => emitter.on('operation', listener),
-		offOperationUpdated: (listener: (event: OnchainOperationEvent) => void) =>
-			emitter.off('operation', listener),
+			listener: (event: TransactionIntentEvent) => () => void,
+		) => emitter.on('intent', listener),
+		offOperationUpdated: (listener: (event: TransactionIntentEvent) => void) =>
+			emitter.off('intent', listener),
 
-		// 'onOperationUpdatedStatusUpdated' fires only when operation status changes (for UI/state updates)
+		// 'onOperationUpdatedStatusUpdated' fires only when intent status changes (for UI/state updates)
 		onOperationStatusUpdated: (
-			listener: (event: OnchainOperationEvent) => () => void,
-		) => emitter.on('operation:status', listener),
+			listener: (event: TransactionIntentEvent) => () => void,
+		) => emitter.on('intent:status', listener),
 		offOperationStatusUpdated: (
-			listener: (event: OnchainOperationEvent) => void,
-		) => emitter.off('operation:status', listener),
+			listener: (event: TransactionIntentEvent) => void,
+		) => emitter.off('intent:status', listener),
 	};
 }

@@ -1,7 +1,7 @@
 import {
 	initTransactionProcessor,
-	type OnchainOperation,
-	type OnchainOperationEvent,
+	type TransactionIntent,
+	type TransactionIntentEvent,
 } from '../../src/index.js';
 import {
 	createMockProvider,
@@ -14,7 +14,7 @@ import {
 	resetHashCounter,
 	type TEST_ACCOUNT,
 } from '../fixtures/transactions.js';
-import {createOperation, resetOpIdCounter} from '../fixtures/operations.js';
+import {createIntent, resetIntentIdCounter} from '../fixtures/intents.js';
 
 /**
  * Test setup interface
@@ -22,8 +22,8 @@ import {createOperation, resetOpIdCounter} from '../fixtures/operations.js';
 export interface TestSetup {
 	processor: ReturnType<typeof initTransactionProcessor>;
 	controller: MockProviderController;
-	emissions: OnchainOperation[];
-	emissionEvents: OnchainOperationEvent[];
+	emissions: TransactionIntent[];
+	emissionEvents: TransactionIntentEvent[];
 	cleanup: () => void;
 }
 
@@ -37,7 +37,7 @@ export function createTestSetup(
 
 	// Reset counters for clean test state
 	resetHashCounter();
-	resetOpIdCounter();
+	resetIntentIdCounter();
 
 	const {provider, controller} = createMockProvider(providerConfig);
 
@@ -46,10 +46,10 @@ export function createTestSetup(
 		provider,
 	});
 
-	const emissions: OnchainOperation[] = [];
-	const emissionEvents: OnchainOperationEvent[] = [];
+	const emissions: TransactionIntent[] = [];
+	const emissionEvents: TransactionIntentEvent[] = [];
 	const cleanupListener = processor.onOperationUpdated((event) => {
-		emissions.push(structuredClone(event.operation));
+		emissions.push(structuredClone(event.intent));
 		emissionEvents.push(structuredClone(event));
 		return () => {};
 	});
@@ -65,15 +65,15 @@ export function createTestSetup(
 
 let counter = 0;
 /**
- * Helper to create and add an operation with a single tx to the processor
+ * Helper to create and add an intent with a single tx to the processor
  */
-export function addSingleTxOperation(
+export function addSingleTxIntent(
 	setup: TestSetup,
 	txOverrides: Parameters<typeof createBroadcastedTx>[0] = {},
-	opOverrides: Partial<OnchainOperation> = {},
+	intentOverrides: Partial<TransactionIntent> = {},
 ): {
-	operation: OnchainOperation;
-	operationId: string;
+	intent: TransactionIntent;
+	intentId: string;
 	addToMempool: () => void;
 } {
 	const tx = createBroadcastedTx(txOverrides);
@@ -83,28 +83,28 @@ export function addSingleTxOperation(
 		nonce: tx.nonce ?? 0,
 	});
 
-	const operation = createOperation({
-		...opOverrides,
+	const intent = createIntent({
+		...intentOverrides,
 		transactions: [tx],
 	});
 
-	const operationId = `op-${++counter}`;
-	setup.processor.addMultiple({[operationId]: operation});
+	const intentId = `intent-${++counter}`;
+	setup.processor.addMultiple({[intentId]: intent});
 
 	return {
-		operation,
-		operationId,
+		intent,
+		intentId,
 		addToMempool: () => setup.controller.addToMempool(mockTx),
 	};
 }
 
 /**
- * Helper to add a replacement transaction to an existing operation
+ * Helper to add a replacement transaction to an existing intent
  */
 export function addReplacementTx(
 	setup: TestSetup,
-	operationId: string,
-	operation: OnchainOperation,
+	intentId: string,
+	intent: TransactionIntent,
 	txOverrides: Parameters<typeof createBroadcastedTx>[0] = {},
 ): {newTx: ReturnType<typeof createBroadcastedTx>; addToMempool: () => void} {
 	const newTx = createBroadcastedTx(txOverrides);
@@ -114,10 +114,10 @@ export function addReplacementTx(
 		nonce: newTx.nonce ?? 0,
 	});
 
-	// Add the new tx to the operation via processor.add using the same operation ID
+	// Add the new tx to the intent via processor.add using the same intent ID
 	setup.processor.addMultiple({
-		[operationId]: {
-			...operation,
+		[intentId]: {
+			...intent,
 			transactions: [newTx],
 		},
 	});
@@ -160,11 +160,11 @@ export async function processAndWait(setup: TestSetup): Promise<void> {
 }
 
 /**
- * Get the latest emitted operation from emissions
+ * Get the latest emitted intent from emissions
  */
 export function getLatestEmission(
 	setup: TestSetup,
-): OnchainOperation | undefined {
+): TransactionIntent | undefined {
 	if (setup.emissions.length === 0) {
 		return undefined;
 	}
@@ -172,16 +172,16 @@ export function getLatestEmission(
 }
 
 /**
- * Get the latest emitted operation for a specific operation ID
+ * Get the latest emitted intent for a specific intent ID
  */
-export function getLatestEmissionForOp(
+export function getLatestEmissionForIntent(
 	setup: TestSetup,
-	operationId: string,
-): OnchainOperation | undefined {
-	// Search backwards through emissions to find the latest for this operationId
+	intentId: string,
+): TransactionIntent | undefined {
+	// Search backwards through emissions to find the latest for this intentId
 	for (let i = setup.emissionEvents.length - 1; i >= 0; i--) {
-		if (setup.emissionEvents[i].id === operationId) {
-			return setup.emissionEvents[i].operation;
+		if (setup.emissionEvents[i].id === intentId) {
+			return setup.emissionEvents[i].intent;
 		}
 	}
 	return undefined;
@@ -189,7 +189,7 @@ export function getLatestEmissionForOp(
 
 /**
  * Scenario: Basic transaction lifecycle
- * - Create operation with single tx
+ * - Create intent with single tx
  * - Add to mempool
  * - Process to detect in mempool
  * - Include in block
@@ -200,20 +200,20 @@ export async function runBasicLifecycleScenario(
 	setup: TestSetup,
 	nonce: number = 0,
 ): Promise<{
-	operation: OnchainOperation;
+	intent: TransactionIntent;
 	phases: {
-		added: OnchainOperation | undefined;
-		broadcasted: OnchainOperation | undefined;
-		included: OnchainOperation | undefined;
-		finalized: OnchainOperation | undefined;
+		added: TransactionIntent | undefined;
+		broadcasted: TransactionIntent | undefined;
+		included: TransactionIntent | undefined;
+		finalized: TransactionIntent | undefined;
 	};
 }> {
-	const {operation, addToMempool} = addSingleTxOperation(setup, {nonce});
+	const {intent, addToMempool} = addSingleTxIntent(setup, {nonce});
 	const phases: {
-		added: OnchainOperation | undefined;
-		broadcasted: OnchainOperation | undefined;
-		included: OnchainOperation | undefined;
-		finalized: OnchainOperation | undefined;
+		added: TransactionIntent | undefined;
+		broadcasted: TransactionIntent | undefined;
+		included: TransactionIntent | undefined;
+		finalized: TransactionIntent | undefined;
 	} = {
 		added: undefined,
 		broadcasted: undefined,
@@ -232,7 +232,7 @@ export async function runBasicLifecycleScenario(
 	phases.broadcasted = setup.emissions[setup.emissions.length - 1];
 
 	// Phase 3: Include in block
-	setup.controller.includeTx(operation.transactions[0].hash, 'success');
+	setup.controller.includeTx(intent.transactions[0].hash, 'success');
 	await processAndWait(setup);
 	phases.included = setup.emissions[setup.emissions.length - 1];
 
@@ -241,12 +241,12 @@ export async function runBasicLifecycleScenario(
 	await processAndWait(setup);
 	phases.finalized = setup.emissions[setup.emissions.length - 1];
 
-	return {operation, phases};
+	return {intent, phases};
 }
 
 /**
  * Scenario: Gas bump replacement
- * - Create operation with TX1
+ * - Create intent with TX1
  * - User bumps gas, adds TX2 with same nonce
  * - TX2 gets included, TX1 dropped
  */
@@ -254,20 +254,20 @@ export async function runGasBumpScenario(
 	setup: TestSetup,
 	nonce: number = 5,
 ): Promise<{
-	operation: OnchainOperation;
+	intent: TransactionIntent;
 	tx1Hash: `0x${string}`;
 	tx2Hash: `0x${string}`;
-	finalEmission: OnchainOperation | undefined;
+	finalEmission: TransactionIntent | undefined;
 }> {
 	// Create initial tx
 	const {
-		operation,
-		operationId,
+		intent,
+		intentId,
 		addToMempool: addTx1ToMempool,
-	} = addSingleTxOperation(setup, {
+	} = addSingleTxIntent(setup, {
 		nonce,
 	});
-	const tx1Hash = operation.transactions[0].hash;
+	const tx1Hash = intent.transactions[0].hash;
 
 	// Add TX1 to mempool and process
 	addTx1ToMempool();
@@ -276,11 +276,11 @@ export async function runGasBumpScenario(
 	// Create replacement TX2 with higher gas
 	const {newTx: tx2, addToMempool: addTx2ToMempool} = addReplacementTx(
 		setup,
-		operationId,
-		operation,
+		intentId,
+		intent,
 		{
 			nonce,
-			from: operation.transactions[0].from,
+			from: intent.transactions[0].from,
 		},
 	);
 	const tx2Hash = tx2.hash;
@@ -295,7 +295,7 @@ export async function runGasBumpScenario(
 	await processAndWait(setup);
 
 	return {
-		operation,
+		intent,
 		tx1Hash,
 		tx2Hash,
 		finalEmission: setup.emissions[setup.emissions.length - 1],
@@ -304,7 +304,7 @@ export async function runGasBumpScenario(
 
 /**
  * Scenario: Dropped transaction
- * - Create operation with tx
+ * - Create intent with tx
  * - Tx disappears from mempool
  * - Another tx consumes the nonce externally
  * - Tx becomes dropped
@@ -313,12 +313,12 @@ export async function runDroppedScenario(
 	setup: TestSetup,
 	nonce: number = 5,
 ): Promise<{
-	operation: OnchainOperation;
-	finalEmission: OnchainOperation | undefined;
+	intent: TransactionIntent;
+	finalEmission: TransactionIntent | undefined;
 }> {
-	const {operation, addToMempool} = addSingleTxOperation(setup, {nonce});
-	const txHash = operation.transactions[0].hash;
-	const account = operation.transactions[0].from;
+	const {intent, addToMempool} = addSingleTxIntent(setup, {nonce});
+	const txHash = intent.transactions[0].hash;
+	const account = intent.transactions[0].from;
 
 	// Add to mempool and process
 	addToMempool();
@@ -334,7 +334,7 @@ export async function runDroppedScenario(
 	await processAndWait(setup);
 
 	return {
-		operation,
+		intent,
 		finalEmission: setup.emissions[setup.emissions.length - 1],
 	};
 }

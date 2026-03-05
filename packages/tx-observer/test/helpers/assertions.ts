@@ -1,53 +1,53 @@
 import {expect} from 'vitest';
 import type {
-	OnchainOperation,
+	TransactionIntent,
 	BroadcastedTransaction,
 	BroadcastedTransactionInclusion,
 } from '../../src/index.js';
 
 /**
- * Assert that an operation has the expected inclusion status
+ * Assert that an intent has the expected inclusion status
  */
-export function assertOperationInclusion(
-	op: OnchainOperation,
+export function assertIntentInclusion(
+	intent: TransactionIntent,
 	expectedInclusion: BroadcastedTransactionInclusion,
 	message?: string,
 ): void {
-	expect(op.state?.inclusion, message).toBe(expectedInclusion);
+	expect(intent.state?.inclusion, message).toBe(expectedInclusion);
 }
 
 /**
- * Assert that an operation is in the Included state with expected status
+ * Assert that an intent is in the Included state with expected status
  */
-export function assertOperationIncluded(
-	op: OnchainOperation,
+export function assertIntentIncluded(
+	intent: TransactionIntent,
 	expectedStatus: 'Success' | 'Failure',
 	message?: string,
 ): void {
-	expect(op.state?.inclusion, message).toBe('Included');
-	expect(op.state?.status, message).toBe(expectedStatus);
-	expect(typeof op.state?.txIndex, message).toBe('number');
+	expect(intent.state?.inclusion, message).toBe('Included');
+	expect(intent.state?.status, message).toBe(expectedStatus);
+	expect(typeof intent.state?.attemptIndex, message).toBe('number');
 }
 
 /**
- * Assert that an operation is finalized
+ * Assert that an intent is finalized
  */
-export function assertOperationFinalized(
-	op: OnchainOperation,
+export function assertIntentFinalized(
+	intent: TransactionIntent,
 	message?: string,
 ): void {
-	expect(op.state?.final, message).toBeDefined();
-	expect(typeof op.state?.final, message).toBe('number');
+	expect(intent.state?.final, message).toBeDefined();
+	expect(typeof intent.state?.final, message).toBe('number');
 }
 
 /**
- * Assert that an operation is dropped
+ * Assert that an intent is dropped
  */
-export function assertOperationDropped(
-	op: OnchainOperation,
+export function assertIntentDropped(
+	intent: TransactionIntent,
 	message?: string,
 ): void {
-	expect(op.state?.inclusion, message).toBe('Dropped');
+	expect(intent.state?.inclusion, message).toBe('Dropped');
 }
 
 /**
@@ -62,41 +62,41 @@ export function assertTxInclusion(
 }
 
 /**
- * Assert that an operation contains a specific transaction hash
+ * Assert that an intent contains a specific transaction hash
  */
-export function assertOperationContainsTx(
-	op: OnchainOperation,
+export function assertIntentContainsTx(
+	intent: TransactionIntent,
 	txHash: `0x${string}`,
 	message?: string,
 ): void {
-	const found = op.transactions.some((tx) => tx.hash === txHash);
-	expect(found, message || `Operation should contain tx ${txHash}`).toBe(true);
+	const found = intent.transactions.some((tx) => tx.hash === txHash);
+	expect(found, message || `Intent should contain tx ${txHash}`).toBe(true);
 }
 
 /**
- * Assert that an operation has the expected number of transactions
+ * Assert that an intent has the expected number of transactions
  */
-export function assertOperationTxCount(
-	op: OnchainOperation,
+export function assertIntentTxCount(
+	intent: TransactionIntent,
 	expectedCount: number,
 	message?: string,
 ): void {
 	expect(
-		op.transactions.length,
-		message || `Operation should have ${expectedCount} transactions`,
+		intent.transactions.length,
+		message || `Intent should have ${expectedCount} transactions`,
 	).toBe(expectedCount);
 }
 
 /**
- * Assert that the winning tx (txIndex) points to a specific hash
+ * Assert that the winning tx (attemptIndex) points to a specific hash
  */
 export function assertWinningTx(
-	op: OnchainOperation,
+	intent: TransactionIntent,
 	expectedHash: `0x${string}`,
 	message?: string,
 ): void {
-	expect(op.state?.txIndex, 'txIndex should be defined').toBeDefined();
-	const winningTx = op.transactions[op.state?.txIndex!];
+	expect(intent.state?.attemptIndex, 'attemptIndex should be defined').toBeDefined();
+	const winningTx = intent.transactions[intent.state?.attemptIndex!];
 	expect(
 		winningTx.hash,
 		message || `Winning tx should be ${expectedHash}`,
@@ -104,14 +104,14 @@ export function assertWinningTx(
 }
 
 /**
- * Assert that all transactions in an operation have a specific inclusion status
+ * Assert that all transactions in an intent have a specific inclusion status
  */
 export function assertAllTxsInclusion(
-	op: OnchainOperation,
+	intent: TransactionIntent,
 	expectedInclusion: BroadcastedTransactionInclusion,
 	message?: string,
 ): void {
-	for (const tx of op.transactions) {
+	for (const tx of intent.transactions) {
 		expect(
 			tx.state?.inclusion,
 			message || `All txs should be ${expectedInclusion}`,
@@ -123,11 +123,11 @@ export function assertAllTxsInclusion(
  * Assert that at least one transaction has a specific inclusion status
  */
 export function assertSomeTxInclusion(
-	op: OnchainOperation,
+	intent: TransactionIntent,
 	expectedInclusion: BroadcastedTransactionInclusion,
 	message?: string,
 ): void {
-	const found = op.transactions.some(
+	const found = intent.transactions.some(
 		(tx) => tx.state?.inclusion === expectedInclusion,
 	);
 	expect(
@@ -140,7 +140,7 @@ export function assertSomeTxInclusion(
  * Assert emission sequence
  */
 export function assertEmissionSequence(
-	emissions: OnchainOperation[],
+	emissions: TransactionIntent[],
 	expectedSequence: BroadcastedTransactionInclusion[],
 	message?: string,
 ): void {
@@ -162,11 +162,11 @@ export function assertEmissionSequence(
  * (Critical for local state handler consistency)
  */
 export function assertEmissionContainsNewTx(
-	emission: OnchainOperation,
+	emission: TransactionIntent,
 	newTxHash: `0x${string}`,
 	message?: string,
 ): void {
-	assertOperationContainsTx(
+	assertIntentContainsTx(
 		emission,
 		newTxHash,
 		message ||
@@ -178,7 +178,7 @@ export function assertEmissionContainsNewTx(
  * Assert that the latest emission in a list contains a transaction
  */
 export function assertLatestEmissionContainsTx(
-	emissions: OnchainOperation[],
+	emissions: TransactionIntent[],
 	txHash: `0x${string}`,
 	message?: string,
 ): void {
@@ -186,38 +186,38 @@ export function assertLatestEmissionContainsTx(
 		0,
 	);
 	const latestEmission = emissions[emissions.length - 1];
-	assertOperationContainsTx(latestEmission, txHash, message);
+	assertIntentContainsTx(latestEmission, txHash, message);
 }
 
 /**
- * Assert operation status matches expected values
+ * Assert intent status matches expected values
  */
-export function assertOperationStatus(
-	op: OnchainOperation,
+export function assertIntentStatus(
+	intent: TransactionIntent,
 	expected: {
 		inclusion: BroadcastedTransactionInclusion;
 		status?: 'Success' | 'Failure';
 		final?: number | undefined;
-		txIndex?: number;
+		attemptIndex?: number;
 	},
 	message?: string,
 ): void {
-	expect(op.state?.inclusion, message).toBe(expected.inclusion);
+	expect(intent.state?.inclusion, message).toBe(expected.inclusion);
 
 	if (expected.status !== undefined) {
-		expect(op.state?.status, message).toBe(expected.status);
+		expect(intent.state?.status, message).toBe(expected.status);
 	}
 
 	if (expected.final !== undefined) {
-		expect(op.state?.final, message).toBe(expected.final);
+		expect(intent.state?.final, message).toBe(expected.final);
 	} else if (
 		expected.inclusion === 'InMemPool' ||
 		expected.inclusion === 'NotFound'
 	) {
-		expect(op.state?.final, message).toBeUndefined();
+		expect(intent.state?.final, message).toBeUndefined();
 	}
 
-	if (expected.txIndex !== undefined) {
-		expect(op.state?.txIndex, message).toBe(expected.txIndex);
+	if (expected.attemptIndex !== undefined) {
+		expect(intent.state?.attemptIndex, message).toBe(expected.attemptIndex);
 	}
 }

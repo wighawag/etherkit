@@ -2,24 +2,24 @@
  * Critical Consistency Tests for Local State Handler
  *
  * These tests verify the guarantee from plans/testing-plan.md:
- * "After addMultiple() returns, any subsequent operation event MUST include the newly added transaction."
+ * "After addMultiple() returns, any subsequent intent event MUST include the newly added transaction."
  *
  * The potential race condition:
- * 1. process() starts iterating over op.transactions (snapshot or live)
+ * 1. process() starts iterating over intent.transactions (snapshot or live)
  * 2. While iterating, addMultiple() is called with a new TX
- * 3. The new TX is pushed to op.transactions
+ * 3. The new TX is pushed to intent.transactions
  * 4. process() continues/finishes iteration
- * 5. computeOperationStatus() is called
+ * 5. computeIntentStatus() is called
  *
- * The guarantee: computeOperationStatus() must use ALL current transactions,
+ * The guarantee: computeIntentStatus() must use ALL current transactions,
  * including any added during iteration.
  */
 
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
 	initTransactionProcessor,
-	type OnchainOperation,
-	type OnchainOperationEvent,
+	type TransactionIntent,
+	type TransactionIntentEvent,
 } from '../../src/index.js';
 import {
 	createMockProvider,
@@ -31,18 +31,18 @@ import {
 	resetHashCounter,
 	TEST_ACCOUNT,
 } from '../fixtures/transactions.js';
-import {createOperation, resetOpIdCounter} from '../fixtures/operations.js';
+import {createIntent, resetIntentIdCounter} from '../fixtures/intents.js';
 
 describe('Consistency Guarantee with Local State Handler', () => {
 	let processor: ReturnType<typeof initTransactionProcessor>;
 	let controller: MockProviderController;
-	let emissions: OnchainOperation[];
-	let emissionEvents: OnchainOperationEvent[];
+	let emissions: TransactionIntent[];
+	let emissionEvents: TransactionIntentEvent[];
 	let cleanup: () => void;
 
 	beforeEach(() => {
 		resetHashCounter();
-		resetOpIdCounter();
+		resetIntentIdCounter();
 
 		const {provider, controller: ctrl} = createMockProvider();
 		controller = ctrl;
@@ -55,7 +55,7 @@ describe('Consistency Guarantee with Local State Handler', () => {
 		emissions = [];
 		emissionEvents = [];
 		cleanup = processor.onOperationUpdated((event) => {
-			emissions.push(structuredClone(event.operation));
+			emissions.push(structuredClone(event.intent));
 			emissionEvents.push(structuredClone(event));
 			return () => {};
 		});
@@ -65,11 +65,11 @@ describe('Consistency Guarantee with Local State Handler', () => {
 		cleanup();
 	});
 
-	// Helper to get latest emission for an operation ID
-	function getLatestEmission(opId: string): OnchainOperation | undefined {
+	// Helper to get latest emission for an intent ID
+	function getLatestEmission(intentId: string): TransactionIntent | undefined {
 		for (let i = emissionEvents.length - 1; i >= 0; i--) {
-			if (emissionEvents[i].id === opId) {
-				return emissionEvents[i].operation;
+			if (emissionEvents[i].id === intentId) {
+				return emissionEvents[i].intent;
 			}
 		}
 		return undefined;
@@ -83,14 +83,14 @@ describe('Consistency Guarantee with Local State Handler', () => {
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			controller.addToMempool(mockTx1);
-			processor.addMultiple({'consistency-test': op});
+			processor.addMultiple({'consistency-test': intent});
 
 			await processor.process();
-			const emittedOp = getLatestEmission('consistency-test');
-			expect(emittedOp?.state?.inclusion).toBe('InMemPool');
+			const emittedIntent = getLatestEmission('consistency-test');
+			expect(emittedIntent?.state?.inclusion).toBe('InMemPool');
 
 			const tx2 = createBroadcastedTx({nonce: 5, from: TEST_ACCOUNT});
 			const mockTx2 = createMockTx({
@@ -111,7 +111,7 @@ describe('Consistency Guarantee with Local State Handler', () => {
 						injected = true;
 						controller.addToMempool(mockTx2);
 						processor.addMultiple({
-							'consistency-test': {...op, transactions: [tx2]},
+							'consistency-test': {...intent, transactions: [tx2]},
 						});
 					}
 				},
@@ -148,13 +148,13 @@ describe('Consistency Guarantee with Local State Handler', () => {
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			controller.addToMempool(mockTx1);
-			processor.addMultiple({'snapshot-test': op});
+			processor.addMultiple({'snapshot-test': intent});
 			await processor.process();
-			const emittedOp = getLatestEmission('snapshot-test');
-			expect(emittedOp?.state?.inclusion).toBe('InMemPool');
+			const emittedIntent = getLatestEmission('snapshot-test');
+			expect(emittedIntent?.state?.inclusion).toBe('InMemPool');
 
 			const emissionCountBefore = emissions.length;
 
@@ -171,7 +171,7 @@ describe('Consistency Guarantee with Local State Handler', () => {
 					added = true;
 					controller.addToMempool(mockTx2);
 					processor.addMultiple({
-						'snapshot-test': {...op, transactions: [tx2]},
+						'snapshot-test': {...intent, transactions: [tx2]},
 					});
 				}
 			});
@@ -205,10 +205,10 @@ describe('Consistency Guarantee with Local State Handler', () => {
 				from: tx1.from,
 				nonce: 5,
 			});
-			const op = createOperation({transactions: [tx1]});
+			const intent = createIntent({transactions: [tx1]});
 
 			controller.addToMempool(mockTx1);
-			processor.addMultiple({'mid-iteration-add': op});
+			processor.addMultiple({'mid-iteration-add': intent});
 			await processor.process();
 
 			const emissionCountBefore = emissions.length;
@@ -228,7 +228,7 @@ describe('Consistency Guarantee with Local State Handler', () => {
 						injected = true;
 						controller.addToMempool(mockTx2);
 						processor.addMultiple({
-							'mid-iteration-add': {...op, transactions: [tx2]},
+							'mid-iteration-add': {...intent, transactions: [tx2]},
 						});
 					}
 				},
@@ -266,18 +266,18 @@ describe('Consistency Guarantee with Local State Handler', () => {
 				nonce: 6,
 			});
 
-			const op = createOperation({transactions: [tx1, tx2]});
+			const intent = createIntent({transactions: [tx1, tx2]});
 
 			controller.addToMempool(mockTx1);
 			controller.addToMempool(mockTx2);
-			processor.addMultiple({'multi-tx': op});
+			processor.addMultiple({'multi-tx': intent});
 
 			await processor.process();
 
-			const emittedOp = getLatestEmission('multi-tx');
-			expect(emittedOp?.transactions[0].state?.inclusion).toBe('InMemPool');
-			expect(emittedOp?.transactions[1].state?.inclusion).toBe('InMemPool');
-			expect(emittedOp?.state?.inclusion).toBe('InMemPool');
+			const emittedIntent = getLatestEmission('multi-tx');
+			expect(emittedIntent?.transactions[0].state?.inclusion).toBe('InMemPool');
+			expect(emittedIntent?.transactions[1].state?.inclusion).toBe('InMemPool');
+			expect(emittedIntent?.state?.inclusion).toBe('InMemPool');
 		});
 
 		it('should correctly compute merged status with multiple TXs', async () => {
@@ -294,21 +294,21 @@ describe('Consistency Guarantee with Local State Handler', () => {
 				nonce: 6,
 			});
 
-			const op = createOperation({transactions: [tx1, tx2]});
+			const intent = createIntent({transactions: [tx1, tx2]});
 
 			controller.addToMempool(mockTx1);
 			controller.addToMempool(mockTx2);
-			processor.addMultiple({'merged-status': op});
+			processor.addMultiple({'merged-status': intent});
 			await processor.process();
 
 			controller.includeTx(tx1.hash, 'success');
 			controller.setAccountNonce(TEST_ACCOUNT, 6);
 			await processor.process();
 
-			const emittedOp = getLatestEmission('merged-status');
-			expect(emittedOp?.state?.inclusion).toBe('Included');
-			expect(emittedOp?.state?.status).toBe('Success');
-			expect(emittedOp?.state?.txIndex).toBe(0);
+			const emittedIntent = getLatestEmission('merged-status');
+			expect(emittedIntent?.state?.inclusion).toBe('Included');
+			expect(emittedIntent?.state?.status).toBe('Success');
+			expect(emittedIntent?.state?.attemptIndex).toBe(0);
 		});
 	});
 });

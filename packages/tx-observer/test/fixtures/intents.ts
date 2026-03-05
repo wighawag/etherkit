@@ -1,35 +1,35 @@
 import type {
-	OnchainOperation,
+	TransactionIntent,
 	BroadcastedTransaction,
 } from '../../src/index.js';
 import {createBroadcastedTx, TEST_ACCOUNT} from './transactions.js';
 
-// Counter for generating unique operation IDs
-let opIdCounter = 0;
+// Counter for generating unique intent IDs
+let intentIdCounter = 0;
 
 /**
- * Generate a unique operation ID
+ * Generate a unique intent ID
  */
-export function generateOpId(): string {
-	opIdCounter++;
-	return `op-${opIdCounter}`;
+export function generateIntentId(): string {
+	intentIdCounter++;
+	return `intent-${intentIdCounter}`;
 }
 
 /**
- * Reset the operation ID counter (call in beforeEach)
+ * Reset the intent ID counter (call in beforeEach)
  */
-export function resetOpIdCounter(): void {
-	opIdCounter = 0;
+export function resetIntentIdCounter(): void {
+	intentIdCounter = 0;
 }
 
 /**
- * Create an OnchainOperation for testing
+ * Create a TransactionIntent for testing
  */
-export function createOperation(
-	overrides: Partial<OnchainOperation> & {
+export function createIntent(
+	overrides: Partial<TransactionIntent> & {
 		transactions?: BroadcastedTransaction[];
 	} = {},
-): OnchainOperation {
+): TransactionIntent {
 	// Default to one pending transaction if none provided
 	const transactions = overrides.transactions || [createBroadcastedTx({})];
 
@@ -40,49 +40,49 @@ export function createOperation(
 }
 
 /**
- * Create an operation with multiple transactions (for replacement scenarios)
+ * Create an intent with multiple transactions (for replacement scenarios)
  */
-export function createMultiTxOperation(
+export function createMultiTxIntent(
 	txConfigs: Array<Partial<BroadcastedTransaction>>,
-	opOverrides: Partial<OnchainOperation> = {},
-): OnchainOperation {
+	intentOverrides: Partial<TransactionIntent> = {},
+): TransactionIntent {
 	const transactions = txConfigs.map((config) => createBroadcastedTx(config));
-	return createOperation({
-		...opOverrides,
+	return createIntent({
+		...intentOverrides,
 		transactions,
 	});
 }
 
 /**
- * Create an operation with a single transaction already broadcasted
+ * Create an intent with a single transaction already broadcasted
  */
-export function createBroadcastedOperation(
+export function createBroadcastedIntent(
 	txOverrides: Partial<BroadcastedTransaction> = {},
-	opOverrides: Partial<OnchainOperation> = {},
-): OnchainOperation {
+	intentOverrides: Partial<TransactionIntent> = {},
+): TransactionIntent {
 	const tx = createBroadcastedTx({
 		...txOverrides,
 		state: {inclusion: 'InMemPool', final: undefined, status: undefined},
 	});
-	return createOperation({
-		...opOverrides,
+	return createIntent({
+		...intentOverrides,
 		transactions: [tx],
 		state: {
 			inclusion: 'InMemPool',
 			final: undefined,
 			status: undefined,
-			txIndex: undefined,
+			attemptIndex: undefined,
 		},
 	});
 }
 
 /**
- * Create an operation with an included (successful) transaction
+ * Create an intent with an included (successful) transaction
  */
-export function createIncludedOperation(
+export function createIncludedIntent(
 	txOverrides: Partial<BroadcastedTransaction> = {},
-	opOverrides: Partial<OnchainOperation> = {},
-): OnchainOperation {
+	intentOverrides: Partial<TransactionIntent> = {},
+): TransactionIntent {
 	const tx = createBroadcastedTx({
 		...txOverrides,
 		state: {
@@ -90,24 +90,24 @@ export function createIncludedOperation(
 			status: 'Success',
 		},
 	});
-	return createOperation({
-		...opOverrides,
+	return createIntent({
+		...intentOverrides,
 		transactions: [tx],
 		state: {
 			inclusion: 'Included',
 			status: 'Success',
-			txIndex: 0,
+			attemptIndex: 0,
 		},
 	});
 }
 
 /**
- * Create an operation with a failed transaction
+ * Create an intent with a failed transaction
  */
-export function createFailedOperation(
+export function createFailedIntent(
 	txOverrides: Partial<BroadcastedTransaction> = {},
-	opOverrides: Partial<OnchainOperation> = {},
-): OnchainOperation {
+	intentOverrides: Partial<TransactionIntent> = {},
+): TransactionIntent {
 	const tx = createBroadcastedTx({
 		...txOverrides,
 		state: {
@@ -115,24 +115,24 @@ export function createFailedOperation(
 			status: 'Failure',
 		},
 	});
-	return createOperation({
-		...opOverrides,
+	return createIntent({
+		...intentOverrides,
 		transactions: [tx],
 		state: {
 			inclusion: 'Included',
 			status: 'Failure',
-			txIndex: 0,
+			attemptIndex: 0,
 		},
 	});
 }
 
 /**
- * Create an operation with a dropped transaction
+ * Create an intent with a dropped transaction
  */
-export function createDroppedOperation(
+export function createDroppedIntent(
 	txOverrides: Partial<BroadcastedTransaction> = {},
-	opOverrides: Partial<OnchainOperation> = {},
-): OnchainOperation {
+	intentOverrides: Partial<TransactionIntent> = {},
+): TransactionIntent {
 	const tx = createBroadcastedTx({
 		...txOverrides,
 		state: {
@@ -141,28 +141,28 @@ export function createDroppedOperation(
 			status: undefined,
 		},
 	});
-	return createOperation({
-		...opOverrides,
+	return createIntent({
+		...intentOverrides,
 		transactions: [tx],
 		state: {
 			inclusion: 'Dropped',
 			final: tx.state?.final,
 			status: undefined,
-			txIndex: undefined,
+			attemptIndex: undefined,
 		},
 	});
 }
 
 /**
- * Create an operation representing a gas bump scenario:
+ * Create an intent representing a gas bump scenario:
  * - Original TX with low gas
  * - Replacement TX with higher gas (same nonce)
  */
-export function createGasBumpOperation(
+export function createGasBumpIntent(
 	nonce: number = 5,
-	opOverrides: Partial<OnchainOperation> = {},
+	intentOverrides: Partial<TransactionIntent> = {},
 ): {
-	operation: OnchainOperation;
+	intent: TransactionIntent;
 	originalTx: BroadcastedTransaction;
 	replacementTx: BroadcastedTransaction;
 } {
@@ -175,12 +175,12 @@ export function createGasBumpOperation(
 		from: originalTx.from,
 	});
 
-	const operation = createOperation({
-		...opOverrides,
+	const intent = createIntent({
+		...intentOverrides,
 		transactions: [originalTx, replacementTx],
 	});
 
-	return {operation, originalTx, replacementTx};
+	return {intent, originalTx, replacementTx};
 }
 
 /**
@@ -189,8 +189,8 @@ export function createGasBumpOperation(
 export function createReplacementChain(
 	chainLength: number = 3,
 	nonce: number = 5,
-	opOverrides: Partial<OnchainOperation> = {},
-): {operation: OnchainOperation; transactions: BroadcastedTransaction[]} {
+	intentOverrides: Partial<TransactionIntent> = {},
+): {intent: TransactionIntent; transactions: BroadcastedTransaction[]} {
 	const transactions: BroadcastedTransaction[] = [];
 
 	for (let i = 0; i < chainLength; i++) {
@@ -202,35 +202,35 @@ export function createReplacementChain(
 		transactions.push(tx);
 	}
 
-	const operation = createOperation({
-		...opOverrides,
+	const intent = createIntent({
+		...intentOverrides,
 		transactions,
 	});
 
-	return {operation, transactions};
+	return {intent, transactions};
 }
 
 /**
- * Sample operations for common test scenarios
+ * Sample intents for common test scenarios
  */
-export const SAMPLE_OPS = {
-	// Single pending operation
-	pending: () => createOperation(),
+export const SAMPLE_INTENTS = {
+	// Single pending intent
+	pending: () => createIntent(),
 
-	// Operation with broadcasted tx
-	broadcasted: () => createBroadcastedOperation(),
+	// Intent with broadcasted tx
+	broadcasted: () => createBroadcastedIntent(),
 
-	// Successfully included operation
-	included: () => createIncludedOperation(),
+	// Successfully included intent
+	included: () => createIncludedIntent(),
 
-	// Failed operation
-	failed: () => createFailedOperation(),
+	// Failed intent
+	failed: () => createFailedIntent(),
 
-	// Dropped operation
-	dropped: () => createDroppedOperation(),
+	// Dropped intent
+	dropped: () => createDroppedIntent(),
 
 	// Gas bump scenario
-	gasBump: () => createGasBumpOperation(),
+	gasBump: () => createGasBumpIntent(),
 
 	// Chain of replacements
 	replacementChain: () => createReplacementChain(3),

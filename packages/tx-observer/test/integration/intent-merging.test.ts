@@ -1,28 +1,28 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
 	createTestSetup,
-	addSingleTxOperation,
+	addSingleTxIntent,
 	addReplacementTx,
 	processAndWait,
-	getLatestEmissionForOp,
+	getLatestEmissionForIntent,
 	type TestSetup,
 } from '../helpers/scenarios.js';
 import {
-	assertOperationInclusion,
-	assertOperationIncluded,
-	assertOperationDropped,
-	assertOperationStatus,
+	assertIntentInclusion,
+	assertIntentIncluded,
+	assertIntentDropped,
+	assertIntentStatus,
 } from '../helpers/assertions.js';
 import {resetHashCounter, TEST_ACCOUNT} from '../fixtures/transactions.js';
-import {resetOpIdCounter, createOperation} from '../fixtures/operations.js';
+import {resetIntentIdCounter, createIntent} from '../fixtures/intents.js';
 import {createBroadcastedTx} from '../fixtures/transactions.js';
 
-describe('Operation Status Merging', () => {
+describe('Intent Status Merging', () => {
 	let setup: TestSetup;
 
 	beforeEach(() => {
 		resetHashCounter();
-		resetOpIdCounter();
+		resetIntentIdCounter();
 		setup = createTestSetup({finality: 12});
 	});
 
@@ -32,20 +32,20 @@ describe('Operation Status Merging', () => {
 
 	describe('Status Priority', () => {
 		it('merge-all-broadcasted: All txs in mempool → Broadcasted', async () => {
-			// Create operation with multiple txs
+			// Create intent with multiple txs
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
 			addTx1();
 
 			const {addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -55,25 +55,25 @@ describe('Operation Status Merging', () => {
 
 			await processAndWait(setup);
 
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(emittedOp!, 'InMemPool');
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
 		});
 
 		it('merge-one-included-success: One tx succeeded, others pending → Included/Success', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -87,27 +87,27 @@ describe('Operation Status Merging', () => {
 			setup.controller.includeTx(tx1Hash, 'success');
 			await processAndWait(setup);
 
-			// Operation should be Included/Success (one success wins)
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(emittedOp!, 'Success');
-			expect(emittedOp?.state?.txIndex).toBe(0);
+			// Intent should be Included/Success (one success wins)
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(emittedIntent!, 'Success');
+			expect(emittedIntent?.state?.attemptIndex).toBe(0);
 		});
 
 		it('merge-one-included-failure: One tx failed, others pending → Included/Failure', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -121,26 +121,26 @@ describe('Operation Status Merging', () => {
 			setup.controller.includeTx(tx1Hash, 'failure');
 			await processAndWait(setup);
 
-			// Operation should be Included/Failure
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(emittedOp!, 'Failure');
+			// Intent should be Included/Failure
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(emittedIntent!, 'Failure');
 		});
 
 		it('merge-mixed-included: One success, one failure → Included/Success', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {newTx: tx2, addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -160,26 +160,26 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Success should win over failure
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(emittedOp!, 'Success');
-			expect(emittedOp?.state?.txIndex).toBe(1); // TX2 index
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(emittedIntent!, 'Success');
+			expect(emittedIntent?.state?.attemptIndex).toBe(1); // TX2 index
 		});
 
 		it('merge-all-dropped: All txs dropped → Dropped', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {newTx: tx2, addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 5, // Same nonce
 					from: TEST_ACCOUNT,
@@ -198,32 +198,32 @@ describe('Operation Status Merging', () => {
 			setup.controller.setAccountNonce(TEST_ACCOUNT, 6);
 			await processAndWait(setup);
 
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationDropped(emittedOp!);
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentDropped(emittedIntent!);
 		});
 
 		it('merge-priority-order: Included > Broadcasted > BeingFetched > NotFound > Dropped', async () => {
 			// Test that included status takes priority over all others
 
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 
 			// TX1 not in mempool yet
 			await processAndWait(setup);
-			const notFoundOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(notFoundOp!, 'NotFound');
+			const notFoundIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(notFoundIntent!, 'NotFound');
 
 			// Add TX2 to mempool
 			const {addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -233,8 +233,8 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Should be Broadcasted (TX2 is broadcasted, TX1 is NotFound)
-			const broadcastedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(broadcastedOp!, 'InMemPool');
+			const broadcastedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(broadcastedIntent!, 'InMemPool');
 
 			// Include TX1 directly (skipping mempool)
 			addTx1();
@@ -242,27 +242,27 @@ describe('Operation Status Merging', () => {
 			await processAndWait(setup);
 
 			// Should be Included (highest priority)
-			const includedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationIncluded(includedOp!, 'Success');
+			const includedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentIncluded(includedIntent!, 'Success');
 		});
 	});
 
 	describe('Transaction Index Selection', () => {
-		it('should select first successful tx as txIndex', async () => {
+		it('should select first successful tx as attemptIndex', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {newTx: tx2, addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -273,8 +273,8 @@ describe('Operation Status Merging', () => {
 
 			const {newTx: tx3, addToMempool: addTx3} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 7,
 					from: TEST_ACCOUNT,
@@ -289,29 +289,29 @@ describe('Operation Status Merging', () => {
 			setup.controller.includeTx(tx2Hash, 'success');
 			await processAndWait(setup);
 
-			// txIndex should point to TX2 (index 1)
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			expect(emittedOp?.state?.txIndex).toBe(1);
-			expect(emittedOp?.transactions[emittedOp?.state?.txIndex!].hash).toBe(
+			// attemptIndex should point to TX2 (index 1)
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(emittedIntent?.state?.attemptIndex).toBe(1);
+			expect(emittedIntent?.transactions[emittedIntent?.state?.attemptIndex!].hash).toBe(
 				tx2Hash,
 			);
 		});
 
 		it('should select first failure if no success', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {newTx: tx2, addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -330,26 +330,26 @@ describe('Operation Status Merging', () => {
 			setup.controller.includeTx(tx1Hash, 'failure');
 			await processAndWait(setup);
 
-			// txIndex should point to first failure (TX1, index 0)
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			expect(emittedOp?.state?.txIndex).toBe(0);
+			// attemptIndex should point to first failure (TX1, index 0)
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(emittedIntent?.state?.attemptIndex).toBe(0);
 		});
 
-		it('should update txIndex when success arrives after failure', async () => {
+		it('should update attemptIndex when success arrives after failure', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {newTx: tx2, addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -363,35 +363,35 @@ describe('Operation Status Merging', () => {
 			// TX1 fails
 			setup.controller.includeTx(tx1Hash, 'failure');
 			await processAndWait(setup);
-			const failedOp = getLatestEmissionForOp(setup, operationId);
-			expect(failedOp?.state?.txIndex).toBe(0);
+			const failedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(failedIntent?.state?.attemptIndex).toBe(0);
 
 			// TX2 succeeds
 			setup.controller.includeTx(tx2Hash, 'success');
 			await processAndWait(setup);
 
-			// txIndex should now point to success (TX2)
-			const successOp = getLatestEmissionForOp(setup, operationId);
-			expect(successOp?.state?.txIndex).toBe(1);
+			// attemptIndex should now point to success (TX2)
+			const successIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(successIntent?.state?.attemptIndex).toBe(1);
 		});
 	});
 
 	describe('Finality Handling', () => {
 		it('should use most recent final timestamp from included txs', async () => {
 			const {
-				operation,
-				operationId,
+				intent,
+				intentId,
 				addToMempool: addTx1,
-			} = addSingleTxOperation(setup, {
+			} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
-			const tx1Hash = operation.transactions[0].hash;
+			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
 			const {newTx: tx2, addToMempool: addTx2} = addReplacementTx(
 				setup,
-				operationId,
-				operation,
+				intentId,
+				intent,
 				{
 					nonce: 6,
 					from: TEST_ACCOUNT,
@@ -414,78 +414,78 @@ describe('Operation Status Merging', () => {
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 
-			// Operation should be finalized
-			const finalizedOp = getLatestEmissionForOp(setup, operationId);
-			expect(finalizedOp?.state?.final).toBeDefined();
+			// Intent should be finalized
+			const finalizedIntent = getLatestEmissionForIntent(setup, intentId);
+			expect(finalizedIntent?.state?.final).toBeDefined();
 		});
 	});
 
 	describe('Edge Cases', () => {
 		it('should handle empty transactions array', async () => {
-			const op = createOperation({
+			const intent = createIntent({
 				transactions: [],
 			});
 
-			setup.processor.addMultiple({'test-empty': op});
+			setup.processor.addMultiple({'test-empty': intent});
 			await processAndWait(setup);
 
-			// With no transactions, the operation stays at initial state
+			// With no transactions, the intent stays at initial state
 			// (no txs to process means no status change)
-			// Check emissions - no emission should have occurred for this operation
-			const emittedOp = getLatestEmissionForOp(setup, 'test-empty');
-			expect(emittedOp).toBeUndefined();
+			// Check emissions - no emission should have occurred for this intent
+			const emittedIntent = getLatestEmissionForIntent(setup, 'test-empty');
+			expect(emittedIntent).toBeUndefined();
 		});
 
-		it('should handle single transaction operation', async () => {
-			const {operationId, addToMempool} = addSingleTxOperation(setup, {
+		it('should handle single transaction intent', async () => {
+			const {intentId, addToMempool} = addSingleTxIntent(setup, {
 				nonce: 5,
 			});
 
 			addToMempool();
 			await processAndWait(setup);
 
-			const emittedOp = getLatestEmissionForOp(setup, operationId);
-			assertOperationInclusion(emittedOp!, 'InMemPool');
-			expect(emittedOp?.transactions).toHaveLength(1);
+			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
+			assertIntentInclusion(emittedIntent!, 'InMemPool');
+			expect(emittedIntent?.transactions).toHaveLength(1);
 		});
 
 		it('should deduplicate transactions with same hash', async () => {
 			const tx = createBroadcastedTx({nonce: 5});
-			const op = createOperation({
+			const intent = createIntent({
 				transactions: [tx],
 			});
 
-			setup.processor.addMultiple({'dedup-test': op});
+			setup.processor.addMultiple({'dedup-test': intent});
 
 			// Try to add same tx again
 			setup.processor.addMultiple({
 				'dedup-test': {
-					...op,
+					...intent,
 					transactions: [tx], // Same tx
 				},
 			});
 
-			// We need to check the emitted operation, but since it's just adding without processing,
+			// We need to check the emitted intent, but since it's just adding without processing,
 			// let's process and check the emissions
 			await processAndWait(setup);
 
-			const emittedOp = getLatestEmissionForOp(setup, 'dedup-test');
+			const emittedIntent = getLatestEmissionForIntent(setup, 'dedup-test');
 			// Should still have only one tx
-			expect(emittedOp?.transactions).toHaveLength(1);
+			expect(emittedIntent?.transactions).toHaveLength(1);
 		});
 
-		it('should merge operations with same ID', async () => {
+		it('should merge intents with same ID', async () => {
 			const tx1 = createBroadcastedTx({nonce: 5});
-			const op = createOperation({
+			const intent = createIntent({
 				transactions: [tx1],
 			});
 
-			setup.processor.addMultiple({'same-op-id': op});
+			setup.processor.addMultiple({'same-intent-id': intent});
 
-			// Add another tx to same operation
+			// Add another tx to same intent
 			const tx2 = createBroadcastedTx({nonce: 6});
 			setup.processor.addMultiple({
-				'same-op-id': {
+				'same-intent-id': {
 					transactions: [tx2],
 				},
 			});
@@ -493,11 +493,11 @@ describe('Operation Status Merging', () => {
 			// Process and check emissions
 			await processAndWait(setup);
 
-			const emittedOp = getLatestEmissionForOp(setup, 'same-op-id');
+			const emittedIntent = getLatestEmissionForIntent(setup, 'same-intent-id');
 			// Should have both txs
-			expect(emittedOp?.transactions).toHaveLength(2);
-			expect(emittedOp?.transactions[0].hash).toBe(tx1.hash);
-			expect(emittedOp?.transactions[1].hash).toBe(tx2.hash);
+			expect(emittedIntent?.transactions).toHaveLength(2);
+			expect(emittedIntent?.transactions[0].hash).toBe(tx1.hash);
+			expect(emittedIntent?.transactions[1].hash).toBe(tx2.hash);
 		});
 	});
 });
