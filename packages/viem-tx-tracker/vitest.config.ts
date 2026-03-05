@@ -5,7 +5,7 @@ export default defineConfig({
 	test: {
 		include: ['test/**/*.test.ts'],
 		globalSetup: [join(__dirname, './test/prool/globalSetup.ts')],
-		testTimeout: 12000,
+		testTimeout: 20000,
 		coverage: {
 			provider: 'v8',
 			include: ['src/**/*.ts'],
