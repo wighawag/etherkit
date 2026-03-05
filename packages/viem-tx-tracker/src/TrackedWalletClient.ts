@@ -253,14 +253,22 @@ export function createTrackedWalletClient<
 		const {from, intendedNonce} = await extractTransactionContext(args);
 
 		// Execute the underlying transaction with nonce injected
-		const result = await execute({...restArgs, nonce: intendedNonce} as T & {nonce: number});
+		const result = await execute({...restArgs, nonce: intendedNonce} as T & {
+			nonce: number;
+		});
 		const hash = extractHash(result);
 
 		// Verify transaction and get actual nonce
 		const actualNonce = await verifyTransactionNonce(hash, intendedNonce);
 
 		// Create tracked transaction record
-		const trackedTx = createTrackedTransaction(hash, from, actualNonce, metadata, restArgs);
+		const trackedTx = createTrackedTransaction(
+			hash,
+			from,
+			actualNonce,
+			metadata,
+			restArgs,
+		);
 
 		// Emit transaction broadcasted event
 		emitter.emit('transaction:broadcasted', trackedTx);
@@ -281,7 +289,9 @@ export function createTrackedWalletClient<
 		const {serializedTransaction, metadata, execute, extractHash} = args;
 
 		// Extract context from the serialized transaction
-		const {from, intendedNonce} = await extractRawTransactionContext(serializedTransaction);
+		const {from, intendedNonce} = await extractRawTransactionContext(
+			serializedTransaction,
+		);
 
 		// Execute the broadcast
 		const result = await execute();
@@ -315,8 +325,15 @@ export function createTrackedWalletClient<
 
 		async writeContract<
 			const TAbi extends Abi | readonly unknown[],
-			TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
-			TArgs extends ContractFunctionArgs<TAbi, 'nonpayable' | 'payable', TFunctionName>,
+			TFunctionName extends ContractFunctionName<
+				TAbi,
+				'nonpayable' | 'payable'
+			>,
+			TArgs extends ContractFunctionArgs<
+				TAbi,
+				'nonpayable' | 'payable',
+				TFunctionName
+			>,
 			TChainOverride extends Chain | undefined = undefined,
 		>(
 			args: TrackedWriteContractParameters<
@@ -335,7 +352,8 @@ export function createTrackedWalletClient<
 				nonce,
 				metadata,
 				restArgs: writeArgs,
-				execute: (argsWithNonce) => walletClient.writeContract(argsWithNonce as any),
+				execute: (argsWithNonce) =>
+					walletClient.writeContract(argsWithNonce as any),
 				extractHash: (hash) => hash,
 			});
 		},
@@ -350,12 +368,15 @@ export function createTrackedWalletClient<
 				nonce,
 				metadata,
 				restArgs: sendArgs,
-				execute: (argsWithNonce) => walletClient.sendTransaction(argsWithNonce as any),
+				execute: (argsWithNonce) =>
+					walletClient.sendTransaction(argsWithNonce as any),
 				extractHash: (hash) => hash,
 			});
 		},
 
-		async sendRawTransaction(args: TrackedRawTransactionParameters): Promise<Hash> {
+		async sendRawTransaction(
+			args: TrackedRawTransactionParameters,
+		): Promise<Hash> {
 			const {metadata, serializedTransaction} = args;
 
 			return executeTrackedRawTransaction({
@@ -372,8 +393,15 @@ export function createTrackedWalletClient<
 
 		async writeContractSync<
 			const TAbi extends Abi | readonly unknown[],
-			TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
-			TArgs extends ContractFunctionArgs<TAbi, 'nonpayable' | 'payable', TFunctionName>,
+			TFunctionName extends ContractFunctionName<
+				TAbi,
+				'nonpayable' | 'payable'
+			>,
+			TArgs extends ContractFunctionArgs<
+				TAbi,
+				'nonpayable' | 'payable',
+				TFunctionName
+			>,
 			TChainOverride extends Chain | undefined = undefined,
 		>(
 			args: TrackedWriteContractParameters<
@@ -392,12 +420,15 @@ export function createTrackedWalletClient<
 				nonce,
 				metadata,
 				restArgs: writeArgs,
-				execute: (argsWithNonce) => walletClient.writeContractSync(argsWithNonce as any),
+				execute: (argsWithNonce) =>
+					walletClient.writeContractSync(argsWithNonce as any),
 				extractHash: (receipt) => receipt.transactionHash,
 			});
 		},
 
-		async sendTransactionSync<TChainOverride extends Chain | undefined = undefined>(
+		async sendTransactionSync<
+			TChainOverride extends Chain | undefined = undefined,
+		>(
 			args: TrackedSendTransactionParameters<TChain, TAccount, TChainOverride>,
 		): Promise<TransactionReceipt> {
 			const {metadata, nonce, ...sendArgs} = args;
@@ -407,18 +438,22 @@ export function createTrackedWalletClient<
 				nonce,
 				metadata,
 				restArgs: sendArgs,
-				execute: (argsWithNonce) => walletClient.sendTransactionSync(argsWithNonce as any),
+				execute: (argsWithNonce) =>
+					walletClient.sendTransactionSync(argsWithNonce as any),
 				extractHash: (receipt) => receipt.transactionHash,
 			});
 		},
 
-		async sendRawTransactionSync(args: TrackedRawTransactionParameters): Promise<TransactionReceipt> {
+		async sendRawTransactionSync(
+			args: TrackedRawTransactionParameters,
+		): Promise<TransactionReceipt> {
 			const {metadata, serializedTransaction} = args;
 
 			return executeTrackedRawTransaction({
 				serializedTransaction,
 				metadata,
-				execute: () => walletClient.sendRawTransactionSync({serializedTransaction}),
+				execute: () =>
+					walletClient.sendRawTransactionSync({serializedTransaction}),
 				extractHash: (receipt) => receipt.transactionHash,
 			});
 		},
@@ -430,7 +465,8 @@ export function createTrackedWalletClient<
 		onTransactionBroadcasted: (listener: (event: TrackedTransaction) => void) =>
 			emitter.on('transaction:broadcasted', listener),
 
-		offTransactionBroadcasted: (listener: (event: TrackedTransaction) => void) =>
-			emitter.off('transaction:broadcasted', listener),
+		offTransactionBroadcasted: (
+			listener: (event: TrackedTransaction) => void,
+		) => emitter.off('transaction:broadcasted', listener),
 	};
 }

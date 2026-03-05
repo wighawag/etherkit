@@ -74,7 +74,9 @@ export interface TransactionMetadata {
 /**
  * A tracked transaction record with all relevant information for tracking.
  */
-export interface TrackedTransaction<M extends TransactionMetadata = TransactionMetadata> {
+export interface TrackedTransaction<
+	M extends TransactionMetadata = TransactionMetadata,
+> {
 	/**
 	 * Tracking ID - either metadata.id or auto-generated UUID.
 	 */
@@ -121,10 +123,8 @@ export interface TrackedTransaction<M extends TransactionMetadata = TransactionM
  */
 export type TrackedWriteContractParameters<
 	TAbi extends Abi | readonly unknown[] = Abi,
-	TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'> = ContractFunctionName<
-		TAbi,
-		'nonpayable' | 'payable'
-	>,
+	TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'> =
+		ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
 	TArgs extends ContractFunctionArgs<
 		TAbi,
 		'nonpayable' | 'payable',
@@ -134,7 +134,14 @@ export type TrackedWriteContractParameters<
 	TAccount extends Account | undefined = Account | undefined,
 	TChainOverride extends Chain | undefined = Chain | undefined,
 > = Omit<
-	WriteContractParameters<TAbi, TFunctionName, TArgs, TChain, TAccount, TChainOverride>,
+	WriteContractParameters<
+		TAbi,
+		TFunctionName,
+		TArgs,
+		TChain,
+		TAccount,
+		TChainOverride
+	>,
 	'nonce'
 > & {
 	/**
@@ -158,7 +165,10 @@ export type TrackedSendTransactionParameters<
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
 	TChainOverride extends Chain | undefined = Chain | undefined,
-> = Omit<SendTransactionParameters<TChain, TAccount, TChainOverride>, 'nonce'> & {
+> = Omit<
+	SendTransactionParameters<TChain, TAccount, TChainOverride>,
+	'nonce'
+> & {
 	/**
 	 * Optional metadata to attach to the transaction for tracking.
 	 */
@@ -218,7 +228,11 @@ export interface TrackedWalletClient<
 	writeContract<
 		const TAbi extends Abi | readonly unknown[],
 		TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
-		TArgs extends ContractFunctionArgs<TAbi, 'nonpayable' | 'payable', TFunctionName>,
+		TArgs extends ContractFunctionArgs<
+			TAbi,
+			'nonpayable' | 'payable',
+			TFunctionName
+		>,
 		TChainOverride extends Chain | undefined = undefined,
 	>(
 		args: TrackedWriteContractParameters<
@@ -257,7 +271,11 @@ export interface TrackedWalletClient<
 	writeContractSync<
 		const TAbi extends Abi | readonly unknown[],
 		TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
-		TArgs extends ContractFunctionArgs<TAbi, 'nonpayable' | 'payable', TFunctionName>,
+		TArgs extends ContractFunctionArgs<
+			TAbi,
+			'nonpayable' | 'payable',
+			TFunctionName
+		>,
 		TChainOverride extends Chain | undefined = undefined,
 	>(
 		args: TrackedWriteContractParameters<
@@ -282,7 +300,9 @@ export interface TrackedWalletClient<
 	 * Send a signed raw transaction and wait for confirmation.
 	 * Returns the transaction receipt after the transaction is confirmed.
 	 */
-	sendRawTransactionSync(args: TrackedRawTransactionParameters): Promise<TransactionReceipt>;
+	sendRawTransactionSync(
+		args: TrackedRawTransactionParameters,
+	): Promise<TransactionReceipt>;
 
 	// ============================================
 	// Event subscription methods
@@ -294,11 +314,15 @@ export interface TrackedWalletClient<
 	 * @param listener - Callback function receiving TrackedTransaction
 	 * @returns Unsubscribe function
 	 */
-	onTransactionBroadcasted(listener: (event: TrackedTransaction) => void): () => void;
+	onTransactionBroadcasted(
+		listener: (event: TrackedTransaction) => void,
+	): () => void;
 
 	/**
 	 * Unsubscribe from transaction broadcast events.
 	 * @param listener - The same listener function passed to onTransactionBroadcasted
 	 */
-	offTransactionBroadcasted(listener: (event: TrackedTransaction) => void): void;
+	offTransactionBroadcasted(
+		listener: (event: TrackedTransaction) => void,
+	): void;
 }

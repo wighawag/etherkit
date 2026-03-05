@@ -410,7 +410,9 @@ describe('TrackedWalletClient', () => {
 			expect(listener).toHaveBeenCalledTimes(1);
 			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
 			expect(emittedEvent.txHash).toBe(txHash);
-			expect(emittedEvent.from.toLowerCase()).toBe(account.address.toLowerCase());
+			expect(emittedEvent.from.toLowerCase()).toBe(
+				account.address.toLowerCase(),
+			);
 			expect(emittedEvent.metadata.id).toBe('event-test-id');
 			expect(emittedEvent.metadata.title).toBe('Event Test');
 			expect(emittedEvent.trackingId).toBe('event-test-id');
@@ -428,7 +430,9 @@ describe('TrackedWalletClient', () => {
 				bytecode: TEST_CONTRACT_BYTECODE,
 				args: [account.address, parseEther('1000')],
 			});
-			const receipt = await publicClient.waitForTransactionReceipt({hash: deployHash});
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: deployHash,
+			});
 			const tokenAddress = receipt.contractAddress!;
 
 			const listener = vi.fn();
