@@ -43,6 +43,11 @@
 		"src"
 	],
 	"sideEffects": false,
+	"dependencies": {
+		"lodash-es": "^4.17.23",
+		"named-logs": "^0.4.1",
+		"radiate": "^0.3.2"
+	},
 	"devDependencies": {
 		"@types/lodash-es": "^4.17.12",
 		"@vitest/coverage-v8": "^4.0.18",
@@ -51,11 +56,6 @@
 		"prettier": "^3.8.0",
 		"typescript": "^5.3.3",
 		"vitest": "^4.0.18"
-	},
-	"dependencies": {
-		"lodash-es": "^4.17.23",
-		"named-logs": "^0.4.1",
-		"radiate": "^0.3.2"
 	},
 	"scripts": {
 		"prepublishOnly": "pnpm format:check && pnpm typecheck && pnpm build",
