@@ -77,10 +77,9 @@ describe('Edge Cases for Full Coverage', () => {
 
 	describe('Already Finalized Transaction', () => {
 		it('should skip processing when tx is already included and finalized', async () => {
-			const {intentId, intent, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intentId, intent, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			// Get tx to broadcasted and included

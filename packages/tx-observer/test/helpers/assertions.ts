@@ -95,7 +95,10 @@ export function assertWinningTx(
 	expectedHash: `0x${string}`,
 	message?: string,
 ): void {
-	expect(intent.state?.attemptIndex, 'attemptIndex should be defined').toBeDefined();
+	expect(
+		intent.state?.attemptIndex,
+		'attemptIndex should be defined',
+	).toBeDefined();
 	const winningTx = intent.transactions[intent.state?.attemptIndex!];
 	expect(
 		winningTx.hash,

@@ -36,10 +36,9 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with tx
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const txHash = intent.transactions[0].hash;
 			const account = intent.transactions[0].from;
 
@@ -158,10 +157,9 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with tx
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const account = intent.transactions[0].from;
 
 			addToMempool();
@@ -187,13 +185,10 @@ describe('Dropped Transaction Scenarios', () => {
 			const broadcastTimestamp = Date.now();
 
 			// Create intent with tx that has specific broadcast timestamp
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{
-					nonce,
-					broadcastTimestamp,
-				},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+				broadcastTimestamp,
+			});
 			const account = intent.transactions[0].from;
 
 			addToMempool();
@@ -218,10 +213,9 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with tx
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const account = intent.transactions[0].from;
 
 			addToMempool();
@@ -245,10 +239,9 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with tx
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const account = intent.transactions[0].from;
 
 			addToMempool();
@@ -274,10 +267,9 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with tx
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 
 			addToMempool();
 			await processAndWait(setup);
@@ -303,10 +295,9 @@ describe('Dropped Transaction Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with tx
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
@@ -373,7 +364,10 @@ describe('Dropped Transaction Scenarios', () => {
 
 			// Intent1 should be dropped, intent2 still broadcasted
 			const droppedIntent1 = getLatestEmissionForIntent(setup, intentId1);
-			const stillBroadcastedIntent2 = getLatestEmissionForIntent(setup, intentId2);
+			const stillBroadcastedIntent2 = getLatestEmissionForIntent(
+				setup,
+				intentId2,
+			);
 			assertIntentDropped(droppedIntent1!);
 			assertIntentInclusion(stillBroadcastedIntent2!, 'InMemPool');
 		});
@@ -383,10 +377,9 @@ describe('Dropped Transaction Scenarios', () => {
 		it('should handle nonce 0 correctly', async () => {
 			const nonce = 0;
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const account = intent.transactions[0].from;
 
 			addToMempool();
@@ -406,10 +399,9 @@ describe('Dropped Transaction Scenarios', () => {
 		it('should handle very high nonces', async () => {
 			const nonce = 999999;
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const account = intent.transactions[0].from;
 
 			addToMempool();

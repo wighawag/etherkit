@@ -42,15 +42,10 @@ describe('Intent Status Merging', () => {
 			});
 			addTx1();
 
-			const {addToMempool: addTx2} = addReplacementTx(
-				setup,
-				intentId,
-				intent,
-				{
-					nonce: 6,
-					from: TEST_ACCOUNT,
-				},
-			);
+			const {addToMempool: addTx2} = addReplacementTx(setup, intentId, intent, {
+				nonce: 6,
+				from: TEST_ACCOUNT,
+			});
 			addTx2();
 
 			await processAndWait(setup);
@@ -70,15 +65,10 @@ describe('Intent Status Merging', () => {
 			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
-			const {addToMempool: addTx2} = addReplacementTx(
-				setup,
-				intentId,
-				intent,
-				{
-					nonce: 6,
-					from: TEST_ACCOUNT,
-				},
-			);
+			const {addToMempool: addTx2} = addReplacementTx(setup, intentId, intent, {
+				nonce: 6,
+				from: TEST_ACCOUNT,
+			});
 			addTx2();
 
 			await processAndWait(setup);
@@ -104,15 +94,10 @@ describe('Intent Status Merging', () => {
 			const tx1Hash = intent.transactions[0].hash;
 			addTx1();
 
-			const {addToMempool: addTx2} = addReplacementTx(
-				setup,
-				intentId,
-				intent,
-				{
-					nonce: 6,
-					from: TEST_ACCOUNT,
-				},
-			);
+			const {addToMempool: addTx2} = addReplacementTx(setup, intentId, intent, {
+				nonce: 6,
+				from: TEST_ACCOUNT,
+			});
 			addTx2();
 
 			await processAndWait(setup);
@@ -220,15 +205,10 @@ describe('Intent Status Merging', () => {
 			assertIntentInclusion(notFoundIntent!, 'NotFound');
 
 			// Add TX2 to mempool
-			const {addToMempool: addTx2} = addReplacementTx(
-				setup,
-				intentId,
-				intent,
-				{
-					nonce: 6,
-					from: TEST_ACCOUNT,
-				},
-			);
+			const {addToMempool: addTx2} = addReplacementTx(setup, intentId, intent, {
+				nonce: 6,
+				from: TEST_ACCOUNT,
+			});
 			addTx2();
 			await processAndWait(setup);
 
@@ -292,9 +272,9 @@ describe('Intent Status Merging', () => {
 			// attemptIndex should point to TX2 (index 1)
 			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
 			expect(emittedIntent?.state?.attemptIndex).toBe(1);
-			expect(emittedIntent?.transactions[emittedIntent?.state?.attemptIndex!].hash).toBe(
-				tx2Hash,
-			);
+			expect(
+				emittedIntent?.transactions[emittedIntent?.state?.attemptIndex!].hash,
+			).toBe(tx2Hash);
 		});
 
 		it('should select first failure if no success', async () => {

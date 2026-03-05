@@ -112,7 +112,9 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 					if (!hookCalled) {
 						hookCalled = true;
 						setup.controller.addToMempool(mockTx2);
-						setup.processor.addMultiple({intent1: {...intent, transactions: [tx2]}});
+						setup.processor.addMultiple({
+							intent1: {...intent, transactions: [tx2]},
+						});
 					}
 				},
 			);
@@ -139,10 +141,9 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 	describe('Concurrent Add During Process', () => {
 		it('concurrent-add-during-process: Call add with new tx while process is running', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			// Start process
@@ -251,10 +252,9 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 		});
 
 		it('concurrent-add-then-include: Add new tx, original tx gets included', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const tx1Hash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -291,10 +291,9 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 
 	describe('Remove During Process', () => {
 		it('concurrent-remove-during-process: Remove intent while being processed', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			const initialEmissionCount = setup.emissions.length;

@@ -31,10 +31,9 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Basic Lifecycle States', () => {
 		it('should transition from BeingFetched to Broadcasted when tx appears in mempool', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 
 			// Initial state
 			expect(intent.state).toBeUndefined();
@@ -53,10 +52,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should transition from Broadcasted to Included when tx is mined', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
@@ -73,10 +71,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should set final timestamp when tx reaches finality', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
@@ -100,10 +97,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should handle failed transaction correctly', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
@@ -174,12 +170,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should emit events with correct intent data', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{
-					nonce: 5,
-				},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
@@ -246,12 +239,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should handle tx without initial nonce', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{
-					nonce: undefined,
-				},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: undefined,
+			});
 
 			// Before processing, nonce might be undefined
 			expect(intent.transactions[0].nonce).toBeUndefined();
@@ -267,10 +257,9 @@ describe('Single Transaction Lifecycle', () => {
 
 	describe('Block Confirmation', () => {
 		it('should not finalize tx before reaching finality threshold', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();
@@ -289,10 +278,9 @@ describe('Single Transaction Lifecycle', () => {
 		});
 
 		it('should finalize tx exactly at finality threshold', async () => {
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			addToMempool();

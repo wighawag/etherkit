@@ -69,7 +69,10 @@ describe('Transaction Replacement Scenarios', () => {
 			await processAndWait(setup);
 
 			// Intent should still be broadcasted with 2 txs
-			const afterReplacementIntent = getLatestEmissionForIntent(setup, intentId);
+			const afterReplacementIntent = getLatestEmissionForIntent(
+				setup,
+				intentId,
+			);
 			assertIntentInclusion(afterReplacementIntent!, 'InMemPool');
 			assertIntentTxCount(afterReplacementIntent!, 2);
 
@@ -132,7 +135,9 @@ describe('Transaction Replacement Scenarios', () => {
 			assertWinningTx(includedIntent!, tx1Hash);
 
 			// TX2 should be Dropped (nonce consumed)
-			const tx2Found = includedIntent!.transactions.find((t) => t.hash === tx2Hash);
+			const tx2Found = includedIntent!.transactions.find(
+				(t) => t.hash === tx2Hash,
+			);
 			expect(tx2Found).toBeDefined();
 			assertTxInclusion(tx2Found!, 'Dropped');
 		});
@@ -317,10 +322,9 @@ describe('Transaction Replacement Scenarios', () => {
 			const nonce = 5;
 
 			// Create intent with TX
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce,
+			});
 			const txHash = intent.transactions[0].hash;
 
 			// Appear in mempool

@@ -158,7 +158,9 @@ describe('Event Types', () => {
 			const statusCountAfterTx1Include = statusEmissions.length;
 
 			// Both events should have fired (status changed to Included)
-			expect(intentCountAfterTx1Include).toBeGreaterThan(intentCountAfterBroadcast);
+			expect(intentCountAfterTx1Include).toBeGreaterThan(
+				intentCountAfterBroadcast,
+			);
 			expect(statusCountAfterTx1Include).toBeGreaterThan(
 				statusCountAfterBroadcast,
 			);
@@ -175,7 +177,9 @@ describe('Event Types', () => {
 			);
 
 			// 'intent' event should fire (TX2 changed)
-			expect(intentEmissions.length).toBeGreaterThan(intentCountAfterTx1Include);
+			expect(intentEmissions.length).toBeGreaterThan(
+				intentCountAfterTx1Include,
+			);
 
 			// 'intent:status' should NOT fire (status still Included)
 			// Note: attemptIndex won't change because TX1 was first success

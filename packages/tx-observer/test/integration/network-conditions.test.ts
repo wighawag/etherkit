@@ -71,10 +71,9 @@ describe('Network Conditions', () => {
 		it('network-eth-getTransactionReceipt-fails: Receipt fetch fails', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -95,10 +94,9 @@ describe('Network Conditions', () => {
 		it('network-intermittent: Random failures with recovery', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -155,10 +153,9 @@ describe('Network Conditions', () => {
 		it('should recover after reconnect', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -187,10 +184,9 @@ describe('Network Conditions', () => {
 		it('blocks-progression: Blocks advance normally', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -221,10 +217,9 @@ describe('Network Conditions', () => {
 		it('blocks-finality-boundary: Tx at exactly finality boundary', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -273,10 +268,9 @@ describe('Network Conditions', () => {
 		it('should work with dynamic latency changes', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			addToMempool();
 
 			// Start with no latency
@@ -331,10 +325,9 @@ describe('Network Conditions', () => {
 		it('timing-stale-data: Process uses fresh data each call', async () => {
 			setup = createTestSetup({finality: 12});
 
-			const {intent, intentId, addToMempool} = addSingleTxIntent(
-				setup,
-				{nonce: 5},
-			);
+			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
+				nonce: 5,
+			});
 			const txHash = intent.transactions[0].hash;
 			addToMempool();
 
@@ -405,7 +398,10 @@ describe('Network Conditions', () => {
 			await processAndWait(setup);
 
 			// intent2 should still work (no state change so no emission)
-			const stillBroadcastedIntent2 = getLatestEmissionForIntent(setup, intent2Id);
+			const stillBroadcastedIntent2 = getLatestEmissionForIntent(
+				setup,
+				intent2Id,
+			);
 			assertIntentInclusion(stillBroadcastedIntent2!, 'InMemPool');
 		});
 	});
