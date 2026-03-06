@@ -331,7 +331,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 			const emissions: TransactionIntent[] = [];
 
 			// State handler listens for events
-			const cleanup = setup.processor.onOperationUpdated((event) => {
+			const cleanup = setup.processor.on('intent:updated', (event) => {
 				emissions.push(structuredClone(event.intent));
 				return () => {};
 			});

@@ -11,7 +11,6 @@ import {
 	assertIntentInclusion,
 	assertIntentIncluded,
 	assertIntentDropped,
-	assertIntentStatus,
 } from '../helpers/assertions.js';
 import {resetHashCounter, TEST_ACCOUNT} from '../fixtures/transactions.js';
 import {resetIntentIdCounter, createIntent} from '../fixtures/intents.js';

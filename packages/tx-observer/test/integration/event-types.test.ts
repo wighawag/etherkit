@@ -48,13 +48,13 @@ describe('Event Types', () => {
 		statusEmissions = [];
 
 		// Listen to both event types
-		cleanupIntent = processor.onOperationUpdated((event) => {
+		cleanupIntent = processor.on('intent:updated', (event) => {
 			intentEmissions.push(structuredClone(event.intent));
 			intentEvents.push(structuredClone(event));
 			return () => {};
 		});
 
-		cleanupStatus = processor.onOperationStatusUpdated((event) => {
+		cleanupStatus = processor.on('intent:status', (event) => {
 			statusEmissions.push(structuredClone(event.intent));
 			return () => {};
 		});

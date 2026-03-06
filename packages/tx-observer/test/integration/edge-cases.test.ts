@@ -116,7 +116,7 @@ describe('Edge Cases for Full Coverage', () => {
 			});
 
 			const emissions: TransactionIntent[] = [];
-			processor.onOperationUpdated((event) => {
+			processor.on('intent:updated', (event) => {
 				emissions.push({
 					...event.intent,
 					transactions: [...event.intent.transactions],
@@ -193,14 +193,14 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 
 			// Add listener
-			processor.onOperationUpdated(listener);
+			processor.on('intent:updated', listener);
 
 			// Remove listener using offOperation
-			processor.offOperationUpdated(listener);
+			processor.off('intent:updated', listener);
 
 			// Listener should be removed (no way to verify directly without emitting)
 			// This test just ensures the method exists and doesn't throw
-			expect(() => processor.offOperationUpdated(listener)).not.toThrow();
+			expect(() => processor.off('intent:updated', listener)).not.toThrow();
 		});
 
 		it('should properly remove intentStatus listener with offOperationStatus', () => {
@@ -213,13 +213,13 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 
 			// Add listener
-			processor.onOperationStatusUpdated(listener);
+			processor.on('intent:status', listener);
 
 			// Remove listener using offOperationStatus
-			processor.offOperationStatusUpdated(listener);
+			processor.off('intent:status', listener);
 
 			// Listener should be removed
-			expect(() => processor.offOperationStatusUpdated(listener)).not.toThrow();
+			expect(() => processor.off('intent:status', listener)).not.toThrow();
 		});
 
 		it('should not emit to removed intent listener', async () => {
@@ -232,8 +232,8 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 
 			// Add and then remove listener
-			setup.processor.onOperationUpdated(listener);
-			setup.processor.offOperationUpdated(listener);
+			setup.processor.on('intent:updated', listener);
+			setup.processor.off('intent:updated', listener);
 
 			// Trigger emission
 			addToMempool();
@@ -254,8 +254,8 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 
 			// Add and then remove listener
-			setup.processor.onOperationStatusUpdated(listener);
-			setup.processor.offOperationStatusUpdated(listener);
+			setup.processor.on('intent:status', listener);
+			setup.processor.off('intent:status', listener);
 
 			// Trigger emission
 			addToMempool();
@@ -302,7 +302,7 @@ describe('Edge Cases for Full Coverage', () => {
 				return () => {};
 			};
 
-			setup.processor.onOperationStatusUpdated(statusListener);
+			setup.processor.on('intent:status', statusListener);
 
 			// Process - should emit status event for initial state change
 			addToMempool();
@@ -365,7 +365,7 @@ describe('Edge Cases for Full Coverage', () => {
 			});
 
 			const emissions: TransactionIntent[] = [];
-			processor.onOperationUpdated((event) => {
+			processor.on('intent:updated', (event) => {
 				emissions.push({
 					...event.intent,
 					transactions: [...event.intent.transactions],

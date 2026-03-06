@@ -94,6 +94,11 @@ export type TransactionIntentsAddedEvent = {
 };
 
 /**
+ * Event payload for adding intents
+ */
+export type TransactionIntentsRemovedEvent = string[];
+
+/**
  * Compute the merged intent status from all its transactions.
  *
  * Priority order (highest wins):
@@ -245,10 +250,12 @@ export function initTransactionProcessor(config: {
 }) {
 	const emitter = new Emitter<{
 		// Fires when any TX in the intent changes (for persistence)
-		intent: TransactionIntentEvent;
+		'intent:updated': TransactionIntentEvent;
 		// Fires only when intent status changes (for UI/state updates)
 		'intent:status': TransactionIntentEvent;
 		'intents:added': TransactionIntentsAddedEvent;
+		'intents:removed': TransactionIntentsRemovedEvent;
+		'intents:cleared': void;
 	}>();
 
 	let provider: EIP1193ProviderWithoutEvents | undefined = config.provider;
@@ -306,6 +313,9 @@ export function initTransactionProcessor(config: {
 			}
 			delete intentsById[key];
 		}
+		if (emitter.hasListeners('intents:cleared')) {
+			emitter.emit('intents:cleared', undefined);
+		}
 	}
 
 	function remove(intentId: string) {
@@ -317,6 +327,10 @@ export function initTransactionProcessor(config: {
 				delete txToIntent[transaction.hash];
 			}
 			delete intentsById[intentId];
+		}
+
+		if (emitter.hasListeners('intents:removed')) {
+			emitter.emit('intents:removed', [intentId]);
 		}
 	}
 
@@ -430,8 +444,8 @@ export function initTransactionProcessor(config: {
 		if (intentsById[id]) {
 			// Emit 'intent' for any TX change (for persistence)
 			if (anyTxChanged || txsWereAdded) {
-				if (emitter.hasListeners('intent')) {
-					emitter.emit('intent', {
+				if (emitter.hasListeners('intent:updated')) {
+					emitter.emit('intent:updated', {
 						id,
 						intent: structuredClone(intent),
 					});
@@ -648,26 +662,7 @@ export function initTransactionProcessor(config: {
 			? throttle(process, config.throttle)
 			: process) as typeof process,
 
-		onOperationsAdded: (
-			listener: (event: TransactionIntentsAddedEvent) => () => void,
-		) => emitter.on('intents:added', listener),
-		offOperationsAdded: (
-			listener: (event: TransactionIntentsAddedEvent) => void,
-		) => emitter.off('intents:added', listener),
-
-		// 'onOperationUpdatedUpdated' fires when any TX in the intent changes (for persistence)
-		onOperationUpdated: (
-			listener: (event: TransactionIntentEvent) => () => void,
-		) => emitter.on('intent', listener),
-		offOperationUpdated: (listener: (event: TransactionIntentEvent) => void) =>
-			emitter.off('intent', listener),
-
-		// 'onOperationUpdatedStatusUpdated' fires only when intent status changes (for UI/state updates)
-		onOperationStatusUpdated: (
-			listener: (event: TransactionIntentEvent) => () => void,
-		) => emitter.on('intent:status', listener),
-		offOperationStatusUpdated: (
-			listener: (event: TransactionIntentEvent) => void,
-		) => emitter.off('intent:status', listener),
+		on: emitter.on.bind(emitter),
+		off: emitter.off.bind(emitter),
 	};
 }

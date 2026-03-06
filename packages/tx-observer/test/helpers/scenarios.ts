@@ -48,7 +48,7 @@ export function createTestSetup(
 
 	const emissions: TransactionIntent[] = [];
 	const emissionEvents: TransactionIntentEvent[] = [];
-	const cleanupListener = processor.onOperationUpdated((event) => {
+	const cleanupListener = processor.on('intent:updated', (event) => {
 		emissions.push(structuredClone(event.intent));
 		emissionEvents.push(structuredClone(event));
 		return () => {};

@@ -10,7 +10,6 @@ import {
 import {
 	assertIntentInclusion,
 	assertIntentIncluded,
-	assertIntentContainsTx,
 	assertWinningTx,
 	assertTxInclusion,
 	assertIntentTxCount,
