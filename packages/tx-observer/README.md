@@ -1,16 +1,16 @@
 # @etherkit/tx-observer
 
-A TypeScript library for monitoring Ethereum onchain operations containing multiple transactions, with automatic status merging and finality tracking.
+A TypeScript library for monitoring Ethereum transaction intents containing multiple transactions, with automatic status merging and finality tracking.
 
 ## Overview
 
-The Operation Processor tracks **operations** - logical groupings of transactions that belong together. This is useful when:
+The Transaction Processor tracks **intents** - logical groupings of transactions that belong together. This is useful when:
 
 - **Gas price bumping**: Multiple transactions with the same nonce but different gas prices
 - **Sequential retries**: Transactions with different nonces for the same logical action
-- **Multi-step operations**: Related transactions that form a single user action
+- **Multi-step intents**: Related transactions that form a single user action
 
-The processor monitors all transactions in an operation and computes a merged status, emitting events when the operation status changes.
+The processor monitors all transactions in an intent and computes a merged status, emitting events when the intent status changes.
 
 ## Installation
 
@@ -21,18 +21,18 @@ npm install @etherkit/tx-observer
 ## Quick Start
 
 ```typescript
-import { initTransactionProcessor } from '@etherkit/tx-observer';
-import type { OnchainOperation, BroadcastedTransaction, OnchainOperationEvent } from '@etherkit/tx-observer';
+import { createTransactionObserver } from '@etherkit/tx-observer';
+import type { TransactionIntent, BroadcastedTransaction, TransactionIntentEvent } from '@etherkit/tx-observer';
 
 // Initialize the processor
-const processor = initTransactionProcessor({
+const processor = createTransactionObserver({
   finality: 12, // blocks until considered final
   throttle: 5000, // optional: throttle process() calls
   provider: window.ethereum,
 });
 
-// Create an operation with one or more transactions
-const operation: OnchainOperation = {
+// Create an intent with one or more transactions
+const intent: TransactionIntent = {
   transactions: [
     {
       hash: '0xabc...',
@@ -40,19 +40,19 @@ const operation: OnchainOperation = {
       nonce: 5,
       broadcastTimestamp: Date.now(),
     },
-  ],,
+  ],
 };
 
-// Add the operation to tracking (ID is passed separately)
-processor.add('my-operation-1', operation);
+// Add the intent to tracking (ID is passed separately)
+processor.add('my-intent-1', intent);
 
-// Listen for operation status changes (for UI updates)
-processor.onOperationStatusUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id}: ${event.operation.state?.inclusion}`);
+// Listen for intent status changes (for UI updates)
+processor.on('intent:status', (event: TransactionIntentEvent) => {
+  console.log(`Intent ${event.id}: ${event.intent.state?.inclusion}`);
   
-  if (event.operation.state?.inclusion === 'Included') {
-    const winningTx = event.operation.transactions[event.operation.state.txIndex];
-    console.log(`Status: ${event.operation.state.status}`);
+  if (event.intent.state?.inclusion === 'Included') {
+    const winningTx = event.intent.transactions[event.intent.state.attemptIndex];
+    console.log(`Status: ${event.intent.state.status}`);
     console.log(`Winning TX: ${winningTx.hash}`);
   }
   
@@ -60,8 +60,14 @@ processor.onOperationStatusUpdated((event: OnchainOperationEvent) => {
 });
 
 // Listen for any transaction changes (for persistence)
-processor.onOperationUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id} updated, save to storage`);
+processor.on('intent:updated', (event: TransactionIntentEvent) => {
+  console.log(`Intent ${event.id} updated, save to storage`);
+  return () => {}; // cleanup function
+});
+
+// Listen for new intents being added
+processor.on('intents:added', (intents) => {
+  console.log(`Added intents:`, Object.keys(intents));
   return () => {}; // cleanup function
 });
 
@@ -71,9 +77,9 @@ setInterval(() => processor.process(), 5000);
 
 ## API Reference
 
-### `initTransactionProcessor(config)`
+### `createTransactionObserver(config)`
 
-Creates a new operation processor instance.
+Creates a new transaction processor instance.
 
 **Config:**
 
@@ -85,46 +91,46 @@ Creates a new operation processor instance.
 
 **Returns:** Processor instance with the following methods:
 
-#### `add(id: string, operation: OnchainOperation)`
+#### `add(id: string, intent: TransactionIntent)`
 
-Add an operation to track. If an operation with the same ID already exists, the transactions are merged into the existing operation.
+Add an intent to track. If an intent with the same ID already exists, the transactions are merged into the existing intent.
 
 ```typescript
-// Add new operation
-processor.add('my-operation-1', operation);
+// Add new intent
+processor.add('my-intent-1', intent);
 
-// Add another transaction to existing operation (same ID merges)
-processor.add('my-operation-1', {
+// Add another transaction to existing intent (same ID merges)
+processor.add('my-intent-1', {
   transactions: [bumpedTx], // New tx with higher gas
   // ... state fields
 });
 // and in case where you track the txs already you can simply re-add
-operation.transactions.push(bumpedTx);
-processor.add('my-operation-1', operation);
+intent.transactions.push(bumpedTx);
+processor.add('my-intent-1', intent);
 ```
 
-#### `addMultiple(operations: {[id: string]: OnchainOperation})`
+#### `addMultiple(intents: {[id: string]: TransactionIntent})`
 
-Add multiple operations at once.
+Add multiple intents at once.
 
 ```typescript
 processor.addMultiple({
-  'operation-1': operation1,
-  'operation-2': operation2,
+  'intent-1': intent1,
+  'intent-2': intent2,
 });
 ```
 
-#### `remove(operationId: string)`
+#### `remove(intentId: string)`
 
-Remove an operation by ID and stop tracking it.
+Remove an intent by ID and stop tracking it.
 
 ```typescript
-processor.remove('my-operation-1');
+processor.remove('my-intent-1');
 ```
 
 #### `clear()`
 
-Remove all operations.
+Remove all intents.
 
 ```typescript
 processor.clear();
@@ -132,7 +138,7 @@ processor.clear();
 
 #### `process(): Promise<void>`
 
-Check and update the status of all tracked operations. This queries the Ethereum provider for transaction receipts and updates statuses accordingly.
+Check and update the status of all tracked intents. This queries the Ethereum provider for transaction receipts and updates statuses accordingly.
 
 ```typescript
 await processor.process();
@@ -146,35 +152,45 @@ Update the Ethereum provider.
 processor.setProvider(newProvider);
 ```
 
-#### `onOperationUpdated(listener): void`
+#### `on(event, listener): () => void`
 
-Subscribe to any operation changes (when any transaction in the operation changes). Useful for persistence.
+Subscribe to events. Returns a cleanup function to unsubscribe.
 
-```typescript
-processor.onOperationUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id} changed:`, event.operation);
-  return () => {}; // cleanup
-});
-```
+**Events:**
 
-#### `offOperationUpdated(listener): void`
-
-Unsubscribe from operation changes.
-
-#### `onOperationStatusUpdated(listener): void`
-
-Subscribe to operation status changes only (when the merged status changes). Useful for UI updates.
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `'intent:updated'` | `TransactionIntentEvent` | Fires when any transaction in the intent changes (for persistence) |
+| `'intent:status'` | `TransactionIntentEvent` | Fires only when intent status changes (for UI updates) |
+| `'intents:added'` | `TransactionIntentsAddedEvent` | Fires when intents are added via `add()` or `addMultiple()` |
+| `'intents:removed'` | `TransactionIntentsRemovedEvent` | Fires when intents are removed via `remove()` |
+| `'intents:cleared'` | `void` | Fires when all intents are cleared via `clear()` |
 
 ```typescript
-processor.onOperationStatusUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id} status:`, event.operation.state?.inclusion);
+// Subscribe to intent updates
+const unsubscribe = processor.on('intent:updated', (event: TransactionIntentEvent) => {
+  console.log(`Intent ${event.id} changed:`, event.intent);
   return () => {}; // cleanup
 });
+
+// Later, unsubscribe
+unsubscribe();
 ```
 
-#### `offOperationStatusUpdated(listener): void`
+#### `off(event, listener): void`
 
-Unsubscribe from operation status changes.
+Unsubscribe from events.
+
+```typescript
+const listener = (event: TransactionIntentEvent) => {
+  console.log(`Intent ${event.id} status:`, event.intent.state?.inclusion);
+  return () => {};
+};
+
+processor.on('intent:status', listener);
+// Later...
+processor.off('intent:status', listener);
+```
 
 ## Types
 
@@ -197,69 +213,87 @@ type BroadcastedTransactionState =
   | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number };
 ```
 
-### `OnchainOperationStatus`
+### `TransactionIntentStatus`
 
-The merged status of all transactions in an operation.
+The merged status of all transactions in an intent.
 
 ```typescript
-type OnchainOperationStatus =
-  | { inclusion: 'InMemPool' | 'NotFound'; final: undefined; status: undefined; txIndex: undefined }
-  | { inclusion: 'Dropped'; final?: number; status: undefined; txIndex: undefined }
-  | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number; txIndex: number };
+type TransactionIntentStatus =
+  | { inclusion: 'InMemPool' | 'NotFound'; final: undefined; status: undefined; attemptIndex: undefined }
+  | { inclusion: 'Dropped'; final?: number; status: undefined; attemptIndex: undefined }
+  | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number; attemptIndex: number };
 ```
 
-- `txIndex`: Index into `transactions[]` for the "winning" transaction (first success, or first failure if all failed)
-- Get the winning tx hash via: `operation.transactions[operation.state.txIndex].hash`
+- `attemptIndex`: Index into `transactions[]` for the "winning" transaction (first success, or first failure if all failed)
+- Get the winning tx hash via: `intent.transactions[intent.state.attemptIndex].hash`
 
-### `OnchainOperation`
+### `TransactionIntent`
 
-An operation containing multiple transactions.
+An intent containing multiple transactions.
 
 ```typescript
-type OnchainOperation = {
+type TransactionIntent = {
   transactions: BroadcastedTransaction[];
-  state?: OnchainOperationStatus;
+  state?: TransactionIntentStatus;
 };
 ```
 
-### `OnchainOperationEvent`
+### `TransactionIntentEvent`
 
-Event payload emitted by listeners, includes both the operation ID and operation data.
+Event payload emitted by listeners, includes both the intent ID and intent data.
 
 ```typescript
-type OnchainOperationEvent = {
+type TransactionIntentEvent = {
   id: string;
-  operation: OnchainOperation;
+  intent: TransactionIntent;
 };
+```
+
+### `TransactionIntentsAddedEvent`
+
+Event payload emitted when intents are added.
+
+```typescript
+type TransactionIntentsAddedEvent = {
+  [id: string]: TransactionIntent;
+};
+```
+
+### `TransactionIntentsRemovedEvent`
+
+Event payload emitted when intents are removed.
+
+```typescript
+type TransactionIntentsRemovedEvent = string[];
 ```
 
 ## Status States
 
 | Inclusion | Description |
 |-----------|-------------|
-| `Broadcasted` | At least one transaction is visible in the mempool |
+| `InMemPool` | At least one transaction is visible in the mempool |
 | `NotFound` | No transactions visible in mempool (may be temporary) |
 | `Dropped` | All transactions dropped (nonce was used by external tx) |
 | `Included` | At least one transaction was included in a block |
 
 ## Status Merging Logic
 
-When an operation contains multiple transactions, their statuses are merged using the following priority (highest wins):
+When an intent contains multiple transactions, their statuses are merged using the following priority (highest wins):
 
-1. **Included** - Any tx included in a block → operation is `Included`
-2. **Broadcasted** - Any tx in mempool → operation is `Broadcasted`
-3. **NotFound** - None visible → operation is `NotFound`
-4. **Dropped** - ALL txs dropped → operation is `Dropped`
+1. **Included** - Any tx included in a block → intent is `Included`
+2. **InMemPool** - Any tx in mempool → intent is `InMemPool`
+3. **NotFound** - None visible → intent is `NotFound`
+4. **Dropped** - ALL txs dropped → intent is `Dropped`
 
-### For `Included` Operations
+### For `Included` Intents
 
 - If **any** transaction succeeded → `status: 'Success'`
 - If **all** included transactions failed → `status: 'Failure'`
-- `txIndex` points to the first successful tx, or first failure if all failed
+- `attemptIndex` points to the first successful tx, or first failure if all failed
 
 This allows scenarios like:
-- Tx A (nonce 5) succeeds, Tx B (nonce 6) fails due to nonce conflict → Operation is **Success**
-- Tx A (nonce 5, low gas) dropped, Tx B (nonce 5, high gas) succeeds → Operation is **Success**
+- Tx A (nonce 5) succeeds, Tx B (nonce 6) fails due to nonce conflict → Intent is **Success**
+- Tx A (nonce 5, low gas) dropped, Tx B (nonce 5, high gas) succeeds → Intent is **Success**
 
 ## Use Cases
 
@@ -287,7 +321,7 @@ processor.add('transfer-1', {
     inclusion: 'InMemPool',
     status: undefined,
     final: undefined,
-    txIndex: undefined,
+    attemptIndex: undefined,
   },
 });
 
@@ -301,8 +335,8 @@ processor.add('transfer-1', { // Same ID → merges
   transactions: [tx2],
 });
 
-// Operation now tracks both txs
-// Whichever is included first determines the operation result
+// Intent now tracks both txs
+// Whichever is included first determines the intent result
 ```
 
 ### Sequential Retry
@@ -317,6 +351,6 @@ processor.add('my-action', {
   ],
 });
 
-// If tx with nonce 5 succeeds, operation is Success
-// Even if tx with nonce 6 fails (nonce conflict), operation is still Success
+// If tx with nonce 5 succeeds, intent is Success
+// Even if tx with nonce 6 fails (nonce conflict), intent is still Success
 ```

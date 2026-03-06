@@ -21,11 +21,11 @@ npm install @etherkit/tx-observer
 ## Quick Start
 
 ```typescript
-import { initTransactionProcessor } from '@etherkit/tx-observer';
+import { createTransactionObserver } from '@etherkit/tx-observer';
 import type { OnchainOperation, BroadcastedTransaction, OnchainOperationEvent } from '@etherkit/tx-observer';
 
 // Initialize the processor
-const processor = initTransactionProcessor({
+const processor = createTransactionObserver({
   finality: 12, // blocks until considered final
   throttle: 5000, // optional: throttle process() calls
   provider: window.ethereum,
@@ -71,7 +71,7 @@ setInterval(() => processor.process(), 5000);
 
 ## API Reference
 
-### `initTransactionProcessor(config)`
+### `createTransactionObserver(config)`
 
 Creates a new operation processor instance.
 

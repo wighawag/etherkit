@@ -6,7 +6,7 @@
 
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {
-	initTransactionProcessor,
+	createTransactionObserver,
 	type TransactionIntent,
 	type TransactionIntentEvent,
 } from '../../src/index.js';
@@ -23,7 +23,7 @@ import {
 import {createIntent, resetIntentIdCounter} from '../fixtures/intents.js';
 
 describe('Event Types', () => {
-	let processor: ReturnType<typeof initTransactionProcessor>;
+	let processor: ReturnType<typeof createTransactionObserver>;
 	let controller: MockProviderController;
 	let intentEmissions: TransactionIntent[];
 	let intentEvents: TransactionIntentEvent[];
@@ -38,7 +38,7 @@ describe('Event Types', () => {
 		const {provider, controller: ctrl} = createMockProvider();
 		controller = ctrl;
 
-		processor = initTransactionProcessor({
+		processor = createTransactionObserver({
 			finality: 12,
 			provider,
 		});

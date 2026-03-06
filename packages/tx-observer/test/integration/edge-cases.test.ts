@@ -9,7 +9,7 @@ import {
 import {resetHashCounter} from '../fixtures/transactions.js';
 import {resetIntentIdCounter} from '../fixtures/intents.js';
 import {createMockProvider} from '../mocks/MockEIP1193Provider.js';
-import {initTransactionProcessor} from '../../src/index.js';
+import {createTransactionObserver} from '../../src/index.js';
 import type {
 	TransactionIntent,
 	TransactionIntentEvent,
@@ -32,7 +32,7 @@ describe('Edge Cases for Full Coverage', () => {
 	describe('Finalized Block Returns Null', () => {
 		it('should handle when latestFinalizedBlock returns null', async () => {
 			const {provider, controller} = createMockProvider();
-			const processor = initTransactionProcessor({
+			const processor = createTransactionObserver({
 				finality: 12,
 				provider: provider as any,
 			});
@@ -110,7 +110,7 @@ describe('Edge Cases for Full Coverage', () => {
 	describe('Transaction Appears on Retry Fetch', () => {
 		it('should handle when tx is not found on first fetch but found on retry', async () => {
 			const {provider, controller} = createMockProvider();
-			const processor = initTransactionProcessor({
+			const processor = createTransactionObserver({
 				finality: 12,
 				provider: provider as any,
 			});
@@ -315,7 +315,7 @@ describe('Edge Cases for Full Coverage', () => {
 	describe('Latest Block Returns Null', () => {
 		it('should handle when latestBlock returns null', async () => {
 			const {provider, controller} = createMockProvider();
-			const processor = initTransactionProcessor({
+			const processor = createTransactionObserver({
 				finality: 12,
 				provider: provider as any,
 			});
@@ -359,7 +359,7 @@ describe('Edge Cases for Full Coverage', () => {
 	describe('BeingFetched Status in computeIntentStatus', () => {
 		it('should return BeingFetched when some txs are BeingFetched and none are Broadcasted/Included', async () => {
 			const {provider, controller} = createMockProvider();
-			const processor = initTransactionProcessor({
+			const processor = createTransactionObserver({
 				finality: 12,
 				provider: provider as any,
 			});

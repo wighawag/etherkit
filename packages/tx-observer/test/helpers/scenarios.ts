@@ -1,5 +1,5 @@
 import {
-	initTransactionProcessor,
+	createTransactionObserver,
 	type TransactionIntent,
 	type TransactionIntentEvent,
 } from '../../src/index.js';
@@ -20,7 +20,7 @@ import {createIntent, resetIntentIdCounter} from '../fixtures/intents.js';
  * Test setup interface
  */
 export interface TestSetup {
-	processor: ReturnType<typeof initTransactionProcessor>;
+	processor: ReturnType<typeof createTransactionObserver>;
 	controller: MockProviderController;
 	emissions: TransactionIntent[];
 	emissionEvents: TransactionIntentEvent[];
@@ -41,7 +41,7 @@ export function createTestSetup(
 
 	const {provider, controller} = createMockProvider(providerConfig);
 
-	const processor = initTransactionProcessor({
+	const processor = createTransactionObserver({
 		finality,
 		provider,
 	});
