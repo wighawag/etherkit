@@ -243,7 +243,7 @@ function hasIntentStatusChanged(
 	);
 }
 
-export function initTransactionProcessor(config: {
+export function createTransactionObserver(config: {
 	finality: number;
 	throttle?: number;
 	provider?: EIP1193ProviderWithoutEvents;
