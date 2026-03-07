@@ -262,6 +262,8 @@ export function createTransactionObserver(config: {
 	const intentsById: {[id: string]: TransactionIntent} = {};
 	// Maintain tx hash lookup for efficient updates
 	const txToIntent: {[txHash: string]: TransactionIntent} = {};
+	// Session counter to invalidate in-flight processing when clear() is called
+	let clearGeneration = 0;
 
 	function addMultiple(intents: {[id: string]: TransactionIntent}) {
 		logger.debug(`adding ${Object.keys(intents).length} intents...`);
@@ -305,6 +307,9 @@ export function createTransactionObserver(config: {
 
 	function clear() {
 		logger.debug(`clearing transactions...`);
+		// Increment generation to invalidate any in-flight processing
+		clearGeneration++;
+		logger.debug(`clear generation incremented to ${clearGeneration}`);
 		const keys = Object.keys(intentsById);
 		for (const key of keys) {
 			const intent = intentsById[key];
@@ -339,10 +344,19 @@ export function createTransactionObserver(config: {
 			return;
 		}
 
+		// Capture generation at start to detect if clear() is called during processing
+		const startGeneration = clearGeneration;
+
 		const latestBlock = await provider.request({
 			method: 'eth_getBlockByNumber',
 			params: ['latest', false],
 		});
+
+		// Abort if clear() was called
+		if (clearGeneration !== startGeneration) {
+			logger.debug('process aborted after latest block fetch: clear() was called');
+			return;
+		}
 
 		if (!latestBlock) {
 			return;
@@ -363,6 +377,12 @@ export function createTransactionObserver(config: {
 			params: [`0x${latestFinalizedBlockNumber.toString(16)}`, false],
 		});
 
+		// Abort if clear() was called
+		if (clearGeneration !== startGeneration) {
+			logger.debug('process aborted after finalized block fetch: clear() was called');
+			return;
+		}
+
 		if (!latestFinalizedBlock) {
 			return;
 		}
@@ -371,14 +391,18 @@ export function createTransactionObserver(config: {
 		logger.debug(`latestFinalizedBlock: ${latestFinalizedBlockNumber}`);
 
 		for (const id of Object.keys(intentsById)) {
+			// Check before processing each intent
+			if (clearGeneration !== startGeneration) {
+				logger.debug('process aborted in intent loop: clear() was called');
+				return;
+			}
 			await processTransactionIntent(id, intentsById[id], {
 				latestBlockNumber,
 				latestBlockTime,
 				latestFinalizedBlock,
 				latestFinalizedBlockTime,
+				startGeneration,
 			});
-			// TODO stop on clear ?
-			// TODO stop on provider change ?
 		}
 	}
 
@@ -390,11 +414,13 @@ export function createTransactionObserver(config: {
 			latestBlockTime,
 			latestFinalizedBlock,
 			latestFinalizedBlockTime,
+			startGeneration,
 		}: {
 			latestBlockNumber: number;
 			latestBlockTime: number;
 			latestFinalizedBlock: EIP1193Block;
 			latestFinalizedBlockTime: number;
+			startGeneration: number;
 		},
 	): Promise<boolean> {
 		/* v8 ignore start - defensive check: provider verified in process() */
@@ -411,13 +437,25 @@ export function createTransactionObserver(config: {
 		// Process each transaction from the snapshot, track if any changed
 		let anyTxChanged = false;
 		for (const transaction of attemptsSnapshot) {
+			// Abort if clear() was called
+			if (clearGeneration !== startGeneration) {
+				logger.debug(`processTransactionIntent aborted for ${id}: clear() was called`);
+				return false;
+			}
 			const changed = await processAttempt(transaction, {
 				latestBlockNumber,
 				latestBlockTime,
 				latestFinalizedBlock,
 				latestFinalizedBlockTime,
+				startGeneration,
 			});
 			if (changed) anyTxChanged = true;
+		}
+
+		// Abort if clear() was called during transaction processing
+		if (clearGeneration !== startGeneration) {
+			logger.debug(`processTransactionIntent aborted for ${id} after processing: clear() was called`);
+			return false;
 		}
 
 		// Check if new txs were added during processing
@@ -438,6 +476,13 @@ export function createTransactionObserver(config: {
 		// Update intent status fields if changed
 		if (statusChanged) {
 			applyIntentStatus(intent, newStatus);
+		}
+
+		// Final check before emissions - ensure clear() wasn't called and intent still exists
+		// This prevents emitting events for intents from a previous session (e.g., different account)
+		if (clearGeneration !== startGeneration) {
+			logger.debug(`processTransactionIntent aborted for ${id} before emit: clear() was called`);
+			return false;
 		}
 
 		// Emit events if still tracked
@@ -473,11 +518,13 @@ export function createTransactionObserver(config: {
 			latestBlockTime,
 			latestFinalizedBlock,
 			latestFinalizedBlockTime,
+			startGeneration,
 		}: {
 			latestBlockNumber: number;
 			latestBlockTime: number;
 			latestFinalizedBlock: EIP1193Block;
 			latestFinalizedBlockTime: number;
+			startGeneration: number;
 		},
 	): Promise<boolean> {
 		/* v8 ignore start - defensive check: provider verified in process() */
@@ -498,6 +545,11 @@ export function createTransactionObserver(config: {
 			params: [transaction.hash],
 		});
 
+		// Abort if clear() was called
+		if (clearGeneration !== startGeneration) {
+			return false;
+		}
+
 		let changes = false;
 		if (txFromPeers) {
 			let receipt;
@@ -506,12 +558,20 @@ export function createTransactionObserver(config: {
 					method: 'eth_getTransactionReceipt',
 					params: [transaction.hash],
 				});
+				// Abort if clear() was called
+				if (clearGeneration !== startGeneration) {
+					return false;
+				}
 			}
 			if (receipt) {
 				const block = await provider.request({
 					method: 'eth_getBlockByHash',
 					params: [txFromPeers.blockHash, false],
 				});
+				// Abort if clear() was called
+				if (clearGeneration !== startGeneration) {
+					return false;
+				}
 				if (block) {
 					const blockNumber = Number(block.number);
 					const blockTimestamp = Number(block.timestamp);
@@ -579,11 +639,15 @@ export function createTransactionObserver(config: {
 				}
 			}
 		} else {
-			// NOTE: we feteched it again to ensure the call was not lost
+			// NOTE: we fetched it again to ensure the call was not lost
 			const txFromPeers = await provider.request({
 				method: 'eth_getTransactionByHash',
 				params: [transaction.hash],
 			});
+			// Abort if clear() was called
+			if (clearGeneration !== startGeneration) {
+				return false;
+			}
 			if (txFromPeers) {
 				return false; // we skip it for now
 			}
@@ -594,6 +658,10 @@ export function createTransactionObserver(config: {
 				method: 'eth_getTransactionCount',
 				params: [account, latestFinalizedBlock.hash],
 			});
+			// Abort if clear() was called
+			if (clearGeneration !== startGeneration) {
+				return false;
+			}
 			const finalityNonce = Number(tranactionCount);
 
 			logger.debug(`finalityNonce: ${finalityNonce}`);

@@ -130,11 +130,27 @@ processor.remove('my-intent-1');
 
 #### `clear()`
 
-Remove all intents.
+Remove all intents and **abort any in-flight processing**.
+
+When `clear()` is called:
+- All tracked intents are immediately removed
+- Any ongoing `process()` call is aborted (no further RPC calls for the old intents)
+- No events are emitted for intents from the previous session
+
+This is essential for **account switching** scenarios where you need to ensure that transaction updates from the previous account don't leak into the new account's session.
 
 ```typescript
-processor.clear();
+// Account switching example
+function onAccountSwitch(newAccount: string, newIntents: Record<string, TransactionIntent>) {
+  // Clear old account's intents - this aborts any in-flight processing
+  processor.clear();
+  
+  // Add new account's intents
+  processor.addMultiple(newIntents);
+}
 ```
+
+**Important:** Even if `process()` is currently running when `clear()` is called, no events will be emitted for the previous account's transactions. Any in-flight RPC calls will complete at the network level, but their results will be discarded.
 
 #### `process(): Promise<void>`
 
@@ -354,3 +370,41 @@ processor.add('my-action', {
 // If tx with nonce 5 succeeds, intent is Success
 // Even if tx with nonce 6 fails (nonce conflict), intent is still Success
 ```
+
+### Account Switching
+
+When your application supports multiple accounts and the user switches between them, use `clear()` to safely transition:
+
+```typescript
+// Store intents per account (e.g., in localStorage or a database)
+const intentsByAccount: Record<string, Record<string, TransactionIntent>> = {};
+
+async function switchAccount(fromAccount: string, toAccount: string) {
+  // 1. Clear current intents - this aborts any in-flight processing
+  //    and prevents events from being emitted for the old account
+  processor.clear();
+  
+  // 2. Load and add the new account's intents
+  const newAccountIntents = intentsByAccount[toAccount] || {};
+  processor.addMultiple(newAccountIntents);
+  
+  // 3. Process to get current status
+  await processor.process();
+}
+
+// Listen for updates and persist to the correct account
+processor.on('intent:updated', (event) => {
+  // Get the current account from your app state
+  const currentAccount = getCurrentAccount();
+  
+  // Persist only for the current account
+  if (intentsByAccount[currentAccount]) {
+    intentsByAccount[currentAccount][event.id] = event.intent;
+    saveIntentsToStorage(currentAccount, intentsByAccount[currentAccount]);
+  }
+  
+  return () => {};
+});
+```
+
+**Key Point:** When `clear()` is called, any ongoing `process()` call is safely aborted. This prevents race conditions where transaction updates from Account A might be emitted while Account B's intents are active.
