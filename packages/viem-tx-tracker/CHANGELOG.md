@@ -1,5 +1,11 @@
 # @etherkit/viem-tx-tracker
 
+## 0.0.4
+
+### Patch Changes
+
+- fix inference
+
 ## 0.0.3
 
 ### Patch Changes
