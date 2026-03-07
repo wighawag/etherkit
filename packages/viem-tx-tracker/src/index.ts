@@ -2,4 +2,7 @@
 export type * from './types.js';
 
 // Factory
-export {createTrackedWalletClient, type TrackedWalletClientBuilder} from './TrackedWalletClient.js';
+export {
+	createTrackedWalletClient,
+	type TrackedWalletClientBuilder,
+} from './TrackedWalletClient.js';
