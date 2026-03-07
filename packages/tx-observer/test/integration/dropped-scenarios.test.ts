@@ -181,12 +181,12 @@ describe('Dropped Transaction Scenarios', () => {
 
 		it('dropped-timing: Drop detected with correct final timestamp', async () => {
 			const nonce = 5;
-			const broadcastTimestamp = Date.now();
+			const broadcastTimestampMs = Date.now();
 
 			// Create intent with tx that has specific broadcast timestamp
 			const {intent, intentId, addToMempool} = addSingleTxIntent(setup, {
 				nonce,
-				broadcastTimestamp,
+				broadcastTimestampMs,
 			});
 			const account = intent.transactions[0].from;
 
@@ -203,7 +203,9 @@ describe('Dropped Transaction Scenarios', () => {
 			assertIntentDropped(droppedIntent!);
 			expect(droppedIntent?.state?.final).toBeDefined();
 			// Final should be the broadcast timestamp (from the tx)
-			expect(droppedIntent?.state?.final).toBe(broadcastTimestamp);
+			expect(droppedIntent?.state?.final).toBe(
+				Math.floor(broadcastTimestampMs / 1000),
+			);
 		});
 	});
 

@@ -28,46 +28,26 @@ export type BlockTag = 'latest' | 'pending' | 'earliest' | 'safe' | 'finalized';
  */
 export type NonceOption = number | BlockTag;
 
-/**
- * Expected event for success detection.
- * Even if tx hash changes due to replacement, we can detect success by watching for this event.
- */
-export interface ExpectedEvent {
-	address: Address;
-	eventName: string;
-	args?: Record<string, unknown>;
-}
+export type ExpectedUpdate =
+	| {
+			address: `0x${string}`;
+			event: {topics: `0x${string}`[]};
+	  }
+	| {
+			address: `0x${string}`;
+			call: {data: `0x${string}`; result: `0x${string}`};
+	  };
 
 /**
  * Metadata that can be attached to a transaction for tracking purposes.
  * All fields are optional and extensible.
  */
 export interface TransactionMetadata {
-	/**
-	 * Optional custom ID - if provided, used instead of tx hash for tracking.
-	 * Useful for correlating transactions with business logic (e.g., order IDs).
-	 */
 	id?: string;
-
-	/**
-	 * Human-readable title for the transaction.
-	 */
-	title?: string;
-
-	/**
-	 * Detailed description of what the transaction does.
-	 */
+	name?: string;
+	args?: any[];
 	description?: string;
-
-	/**
-	 * Expected event signature/filter for success detection.
-	 * Even if tx hash changes due to replacement, we can detect success by watching for this event.
-	 */
-	expectedEvent?: ExpectedEvent;
-
-	/**
-	 * Extensible: user can add any additional fields.
-	 */
+	expectedUpdate?: ExpectedUpdate;
 	[key: string]: unknown;
 }
 
@@ -77,45 +57,12 @@ export interface TransactionMetadata {
 export interface TrackedTransaction<
 	M extends TransactionMetadata = TransactionMetadata,
 > {
-	/**
-	 * Tracking ID - either metadata.id or auto-generated UUID.
-	 */
-	trackingId: string;
-
-	/**
-	 * The transaction hash once known.
-	 */
-	txHash: Hash;
-
-	/**
-	 * Sender address.
-	 */
-	from: Address;
-
-	/**
-	 * Transaction nonce (actual nonce from fetched tx, or intended if fetch failed).
-	 */
-	nonce: number;
-
-	/**
-	 * Chain ID.
-	 */
-	chainId: number;
-
-	/**
-	 * The full metadata provided by the caller.
-	 */
-	metadata: M;
-
-	/**
-	 * Timestamp when the transaction was initiated (ms since epoch).
-	 */
-	initiatedAt: number;
-
-	/**
-	 * The original transaction request data.
-	 */
-	request: unknown;
+	chainId?: number;
+	readonly hash: `0x${string}`;
+	readonly from: `0x${string}`;
+	nonce?: number;
+	readonly broadcastTimestampMs: number;
+	readonly metadata: M;
 }
 
 /**

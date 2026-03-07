@@ -38,7 +38,7 @@ export function createBroadcastedTx(
 		hash,
 		from,
 		nonce: overrides.nonce,
-		broadcastTimestamp: overrides.broadcastTimestamp || Date.now(),
+		broadcastTimestampMs: overrides.broadcastTimestampMs || Date.now(),
 		state: overrides.state,
 	} as BroadcastedTransaction;
 }

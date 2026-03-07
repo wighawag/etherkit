@@ -409,15 +409,15 @@ describe('TrackedWalletClient', () => {
 
 			expect(listener).toHaveBeenCalledTimes(1);
 			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
-			expect(emittedEvent.txHash).toBe(txHash);
+			expect(emittedEvent.hash).toBe(txHash);
 			expect(emittedEvent.from.toLowerCase()).toBe(
 				account.address.toLowerCase(),
 			);
 			expect(emittedEvent.metadata.id).toBe('event-test-id');
 			expect(emittedEvent.metadata.title).toBe('Event Test');
-			expect(emittedEvent.trackingId).toBe('event-test-id');
+			expect(emittedEvent.metadata.id).toBe('event-test-id');
 			expect(typeof emittedEvent.nonce).toBe('number');
-			expect(typeof emittedEvent.initiatedAt).toBe('number');
+			expect(typeof emittedEvent.broadcastTimestampMs).toBe('number');
 
 			// Cleanup
 			trackedClient.offTransactionBroadcasted(listener);
@@ -450,7 +450,7 @@ describe('TrackedWalletClient', () => {
 
 			expect(listener).toHaveBeenCalledTimes(1);
 			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
-			expect(emittedEvent.txHash).toBe(txHash);
+			expect(emittedEvent.hash).toBe(txHash);
 			expect(emittedEvent.metadata.title).toBe('Token Transfer Event Test');
 
 			// Cleanup
@@ -484,9 +484,9 @@ describe('TrackedWalletClient', () => {
 
 			expect(listener).toHaveBeenCalledTimes(1);
 			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
-			expect(emittedEvent.txHash).toBe(txHash);
+			expect(emittedEvent.hash).toBe(txHash);
 			expect(emittedEvent.nonce).toBe(nonce);
-			expect(emittedEvent.trackingId).toBe('raw-event-test');
+			expect(emittedEvent.metadata.id).toBe('raw-event-test');
 
 			// Cleanup
 			trackedClient.offTransactionBroadcasted(listener);
@@ -525,11 +525,7 @@ describe('TrackedWalletClient', () => {
 			});
 
 			const emittedEvent: TrackedTransaction = listener.mock.calls[0][0];
-			expect(emittedEvent.trackingId).toBeDefined();
-			// UUID format check (basic)
-			expect(emittedEvent.trackingId).toMatch(
-				/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-			);
+			expect(emittedEvent.metadata).toBeDefined();
 
 			// Cleanup
 			trackedClient.offTransactionBroadcasted(listener);

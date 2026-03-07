@@ -224,14 +224,12 @@ export function createTrackedWalletClient<
 		request: unknown,
 	): TrackedTransaction<M> {
 		return {
-			trackingId: metadata?.id ?? generateTrackingId(),
-			txHash,
+			hash: txHash,
 			from,
 			nonce,
-			chainId: walletClient.chain?.id ?? 1,
+			chainId: walletClient.chain?.id,
 			metadata: (metadata ?? {}) as M,
-			initiatedAt: Date.now(),
-			request,
+			broadcastTimestampMs: Date.now(),
 		};
 	}
 
