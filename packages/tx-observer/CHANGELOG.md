@@ -1,5 +1,12 @@
 # @etherkit/tx-observer
 
+## 0.0.5
+
+### Patch Changes
+
+- 97fa0f9: clear should discard all pending tx checks
+- 13d2560: normalize types + use broadcastTimestampMs
+
 ## 0.0.4
 
 ### Patch Changes
