@@ -17,15 +17,15 @@ import {
 	createTrackedWalletClient,
 	type TrackedWalletClient,
 	type TrackedTransaction,
-	type TransactionMetadata,
 } from '../src/index.js';
 import {RPC_URL} from './prool/url.js';
 import {TEST_CONTRACT_ABI, TEST_CONTRACT_BYTECODE} from './utils/data.js';
+import {TestTransactionMetadata} from './utils/types.js';
 
 /**
  * Optional metadata type for tests - allows metadata to be omitted
  */
-type TestMetadata = TransactionMetadata | undefined;
+type TestMetadata = TestTransactionMetadata | undefined;
 
 // Anvil's first two test account private keys
 const TEST_PRIVATE_KEY =
