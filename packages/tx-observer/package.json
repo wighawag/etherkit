@@ -58,7 +58,6 @@
 		"vitest": "^4.0.18"
 	},
 	"scripts": {
-		"prepublishOnly": "pnpm format:check && pnpm typecheck && pnpm build",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"build": "tsc",
