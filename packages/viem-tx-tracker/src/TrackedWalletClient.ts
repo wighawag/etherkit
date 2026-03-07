@@ -72,6 +72,49 @@ interface TransactionContext {
 }
 
 /**
+ * Infer transport type from WalletClient
+ */
+type InferTransport<T> = T extends WalletClient<infer TTransport, any, any>
+	? TTransport
+	: Transport;
+
+/**
+ * Infer chain type from WalletClient
+ */
+type InferChain<T> = T extends WalletClient<any, infer TChain, any>
+	? TChain
+	: Chain | undefined;
+
+/**
+ * Infer account type from WalletClient
+ */
+type InferAccount<T> = T extends WalletClient<any, any, infer TAccount>
+	? TAccount
+	: Account | undefined;
+
+/**
+ * Builder interface returned by createTrackedWalletClient for the curried API.
+ */
+export interface TrackedWalletClientBuilder<TMetadata> {
+	/**
+	 * Create the tracked wallet client using the provided wallet and public clients.
+	 *
+	 * @param walletClient - The underlying viem WalletClient
+	 * @param publicClient - A PublicClient for nonce fetching and tx verification
+	 * @returns A TrackedWalletClient instance
+	 */
+	using<TClient extends WalletClient>(
+		walletClient: TClient,
+		publicClient: PublicClient,
+	): TrackedWalletClient<
+		TMetadata,
+		InferTransport<TClient>,
+		InferChain<TClient>,
+		InferAccount<TClient>
+	>;
+}
+
+/**
  * Create a tracked wallet client that wraps a viem WalletClient.
  *
  * The tracked client provides the same API as WalletClient but with:
@@ -81,19 +124,35 @@ interface TransactionContext {
  * - Event emission for tracking
  *
  * @typeParam TMetadata - The metadata type. Use `MyMeta | undefined` to make metadata optional.
- * @param walletClient - The underlying viem WalletClient
- * @param publicClient - A PublicClient for nonce fetching and tx verification
- * @returns A TrackedWalletClient instance
+ * @returns A builder with a `.using()` method to provide the wallet and public clients
+ *
+ * @example
+ * ```typescript
+ * // With required metadata
+ * const tracked = createTrackedWalletClient<{purpose: string}>()
+ *   .using(walletClient, publicClient);
+ *
+ * // With optional metadata
+ * const tracked = createTrackedWalletClient<{purpose: string} | undefined>()
+ *   .using(walletClient, publicClient);
+ * ```
  */
-export function createTrackedWalletClient<
-	TMetadata,
-	TTransport extends Transport = Transport,
-	TChain extends Chain | undefined = Chain | undefined,
-	TAccount extends Account | undefined = Account | undefined,
->(
-	walletClient: WalletClient<TTransport, TChain, TAccount>,
-	publicClient: PublicClient,
-): TrackedWalletClient<TMetadata, TTransport, TChain, TAccount> {
+export function createTrackedWalletClient<TMetadata>(): TrackedWalletClientBuilder<TMetadata> {
+	return {
+		using<TClient extends WalletClient>(
+			walletClient: TClient,
+			publicClient: PublicClient,
+		): TrackedWalletClient<
+			TMetadata,
+			InferTransport<TClient>,
+			InferChain<TClient>,
+			InferAccount<TClient>
+		> {
+			// Type aliases for internal use
+			type TTransport = InferTransport<TClient>;
+			type TChain = InferChain<TClient>;
+			type TAccount = InferAccount<TClient>;
+
 	// Create emitter for transaction broadcast events
 	const emitter = new Emitter<{
 		'transaction:broadcasted': TrackedTransaction<TMetadata>;
@@ -313,7 +372,7 @@ export function createTrackedWalletClient<
 	}
 
 	return {
-		walletClient,
+		walletClient: walletClient as unknown as WalletClient<TTransport, TChain, TAccount>,
 		publicClient,
 
 		// ============================================
@@ -478,5 +537,7 @@ export function createTrackedWalletClient<
 		offTransactionBroadcasted: (
 			listener: (event: TrackedTransaction<TMetadata>) => void,
 		) => emitter.off('transaction:broadcasted', listener),
+	};
+		},
 	};
 }
