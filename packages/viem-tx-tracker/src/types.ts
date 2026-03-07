@@ -52,23 +52,33 @@ export interface TransactionMetadata {
 }
 
 /**
- * A tracked transaction record with all relevant information for tracking.
+ * Conditional type that makes metadata required or optional based on TMetadata.
+ * If TMetadata includes undefined (e.g., `MyMeta | undefined`), metadata is optional.
+ * Otherwise, metadata is required.
  */
-export interface TrackedTransaction<
-	M extends TransactionMetadata = TransactionMetadata,
-> {
+export type MetadataField<TMetadata> = undefined extends TMetadata
+	? {metadata?: TMetadata}
+	: {metadata: TMetadata};
+
+/**
+ * A tracked transaction record with all relevant information for tracking.
+ * The metadata field type matches what was provided to the TrackedWalletClient.
+ */
+export interface TrackedTransaction<TMetadata> {
 	chainId?: number;
 	readonly hash: `0x${string}`;
 	readonly from: `0x${string}`;
 	nonce?: number;
 	readonly broadcastTimestampMs: number;
-	readonly metadata: M;
+	readonly metadata: TMetadata;
 }
 
 /**
- * Extended WriteContractParameters with optional metadata and flexible nonce.
+ * Extended WriteContractParameters with metadata and flexible nonce.
+ * Metadata is required unless TMetadata includes undefined.
  */
 export type TrackedWriteContractParameters<
+	TMetadata,
 	TAbi extends Abi | readonly unknown[] = Abi,
 	TFunctionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'> =
 		ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
@@ -92,23 +102,20 @@ export type TrackedWriteContractParameters<
 	'nonce'
 > & {
 	/**
-	 * Optional metadata to attach to the transaction for tracking.
-	 */
-	metadata?: TransactionMetadata;
-
-	/**
 	 * Nonce option:
 	 * - number: exact nonce to use
 	 * - BlockTag ('latest', 'pending', etc.): fetch nonce using this block tag
 	 * - undefined: fetch nonce using 'pending' (default)
 	 */
 	nonce?: NonceOption;
-};
+} & MetadataField<TMetadata>;
 
 /**
- * Extended SendTransactionParameters with optional metadata and flexible nonce.
+ * Extended SendTransactionParameters with metadata and flexible nonce.
+ * Metadata is required unless TMetadata includes undefined.
  */
 export type TrackedSendTransactionParameters<
+	TMetadata,
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
 	TChainOverride extends Chain | undefined = Chain | undefined,
@@ -117,39 +124,33 @@ export type TrackedSendTransactionParameters<
 	'nonce'
 > & {
 	/**
-	 * Optional metadata to attach to the transaction for tracking.
-	 */
-	metadata?: TransactionMetadata;
-
-	/**
 	 * Nonce option:
 	 * - number: exact nonce to use
 	 * - BlockTag ('latest', 'pending', etc.): fetch nonce using this block tag
 	 * - undefined: fetch nonce using 'pending' (default)
 	 */
 	nonce?: NonceOption;
-};
+} & MetadataField<TMetadata>;
 
 /**
- * Parameters for sendRawTransaction with optional metadata.
+ * Parameters for sendRawTransaction with metadata.
  * The serialized transaction already contains from/nonce which will be decoded.
+ * Metadata is required unless TMetadata includes undefined.
  */
-export interface TrackedRawTransactionParameters {
+export type TrackedRawTransactionParameters<TMetadata> = {
 	/**
 	 * The RLP-encoded signed transaction.
 	 */
 	serializedTransaction: TransactionSerialized;
-
-	/**
-	 * Optional metadata to attach to the transaction for tracking.
-	 */
-	metadata?: TransactionMetadata;
-}
+} & MetadataField<TMetadata>;
 
 /**
  * A wallet client wrapper that tracks transactions with metadata.
+ * TMetadata is the first type parameter and is mandatory - it determines
+ * whether metadata is required or optional on transaction calls.
  */
 export interface TrackedWalletClient<
+	TMetadata,
 	TTransport extends Transport = Transport,
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
@@ -169,7 +170,7 @@ export interface TrackedWalletClient<
 	// ============================================
 
 	/**
-	 * Write to a contract with optional metadata tracking.
+	 * Write to a contract with metadata tracking.
 	 * Returns immediately after broadcast with the transaction hash.
 	 */
 	writeContract<
@@ -183,6 +184,7 @@ export interface TrackedWalletClient<
 		TChainOverride extends Chain | undefined = undefined,
 	>(
 		args: TrackedWriteContractParameters<
+			TMetadata,
 			TAbi,
 			TFunctionName,
 			TArgs,
@@ -193,19 +195,26 @@ export interface TrackedWalletClient<
 	): Promise<Hash>;
 
 	/**
-	 * Send a transaction with optional metadata tracking.
+	 * Send a transaction with metadata tracking.
 	 * Returns immediately after broadcast with the transaction hash.
 	 */
 	sendTransaction<TChainOverride extends Chain | undefined = undefined>(
-		args: TrackedSendTransactionParameters<TChain, TAccount, TChainOverride>,
+		args: TrackedSendTransactionParameters<
+			TMetadata,
+			TChain,
+			TAccount,
+			TChainOverride
+		>,
 	): Promise<Hash>;
 
 	/**
-	 * Send a signed raw transaction with optional metadata tracking.
+	 * Send a signed raw transaction with metadata tracking.
 	 * The nonce and from address are decoded from the serialized transaction.
 	 * Returns immediately after broadcast with the transaction hash.
 	 */
-	sendRawTransaction(args: TrackedRawTransactionParameters): Promise<Hash>;
+	sendRawTransaction(
+		args: TrackedRawTransactionParameters<TMetadata>,
+	): Promise<Hash>;
 
 	// ============================================
 	// Sync methods (wait for confirmation, return receipt)
@@ -226,6 +235,7 @@ export interface TrackedWalletClient<
 		TChainOverride extends Chain | undefined = undefined,
 	>(
 		args: TrackedWriteContractParameters<
+			TMetadata,
 			TAbi,
 			TFunctionName,
 			TArgs,
@@ -240,7 +250,12 @@ export interface TrackedWalletClient<
 	 * Returns the transaction receipt after the transaction is confirmed.
 	 */
 	sendTransactionSync<TChainOverride extends Chain | undefined = undefined>(
-		args: TrackedSendTransactionParameters<TChain, TAccount, TChainOverride>,
+		args: TrackedSendTransactionParameters<
+			TMetadata,
+			TChain,
+			TAccount,
+			TChainOverride
+		>,
 	): Promise<TransactionReceipt>;
 
 	/**
@@ -248,7 +263,7 @@ export interface TrackedWalletClient<
 	 * Returns the transaction receipt after the transaction is confirmed.
 	 */
 	sendRawTransactionSync(
-		args: TrackedRawTransactionParameters,
+		args: TrackedRawTransactionParameters<TMetadata>,
 	): Promise<TransactionReceipt>;
 
 	// ============================================
@@ -258,11 +273,11 @@ export interface TrackedWalletClient<
 	/**
 	 * Subscribe to transaction broadcast events.
 	 * Called immediately after a transaction is successfully broadcast.
-	 * @param listener - Callback function receiving TrackedTransaction
+	 * @param listener - Callback function receiving TrackedTransaction with TMetadata
 	 * @returns Unsubscribe function
 	 */
 	onTransactionBroadcasted(
-		listener: (event: TrackedTransaction) => void,
+		listener: (event: TrackedTransaction<TMetadata>) => void,
 	): () => void;
 
 	/**
@@ -270,6 +285,6 @@ export interface TrackedWalletClient<
 	 * @param listener - The same listener function passed to onTransactionBroadcasted
 	 */
 	offTransactionBroadcasted(
-		listener: (event: TrackedTransaction) => void,
+		listener: (event: TrackedTransaction<TMetadata>) => void,
 	): void;
 }

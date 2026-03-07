@@ -17,13 +17,13 @@ import {
 import {Emitter} from 'radiate';
 import type {
 	BlockTag,
+	MetadataField,
 	NonceOption,
 	TrackedRawTransactionParameters,
 	TrackedSendTransactionParameters,
 	TrackedTransaction,
 	TrackedWalletClient,
 	TrackedWriteContractParameters,
-	TransactionMetadata,
 } from './types.js';
 
 /**
@@ -75,26 +75,28 @@ interface TransactionContext {
  * Create a tracked wallet client that wraps a viem WalletClient.
  *
  * The tracked client provides the same API as WalletClient but with:
- * - Optional metadata field for transaction tracking
+ * - Metadata field for transaction tracking (required unless TMetadata includes undefined)
  * - Automatic nonce fetching (with 'pending' by default)
  * - Post-broadcast transaction verification
- * - TODO: Event emission for tracking
+ * - Event emission for tracking
  *
+ * @typeParam TMetadata - The metadata type. Use `MyMeta | undefined` to make metadata optional.
  * @param walletClient - The underlying viem WalletClient
  * @param publicClient - A PublicClient for nonce fetching and tx verification
  * @returns A TrackedWalletClient instance
  */
 export function createTrackedWalletClient<
+	TMetadata,
 	TTransport extends Transport = Transport,
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
 >(
 	walletClient: WalletClient<TTransport, TChain, TAccount>,
 	publicClient: PublicClient,
-): TrackedWalletClient<TTransport, TChain, TAccount> {
+): TrackedWalletClient<TMetadata, TTransport, TChain, TAccount> {
 	// Create emitter for transaction broadcast events
 	const emitter = new Emitter<{
-		'transaction:broadcasted': TrackedTransaction;
+		'transaction:broadcasted': TrackedTransaction<TMetadata>;
 	}>();
 
 	/**
@@ -216,19 +218,18 @@ export function createTrackedWalletClient<
 	/**
 	 * Create a tracked transaction record.
 	 */
-	function createTrackedTransaction<M extends TransactionMetadata>(
+	function createTrackedTransactionRecord(
 		txHash: Hash,
 		from: Address,
 		nonce: number,
-		metadata: M | undefined,
-		request: unknown,
-	): TrackedTransaction<M> {
+		metadata: TMetadata,
+	): TrackedTransaction<TMetadata> {
 		return {
 			hash: txHash,
 			from,
 			nonce,
 			chainId: walletClient.chain?.id,
-			metadata: (metadata ?? {}) as M,
+			metadata,
 			broadcastTimestampMs: Date.now(),
 		};
 	}
@@ -240,7 +241,7 @@ export function createTrackedWalletClient<
 	async function executeTrackedTransaction<T, R>(args: {
 		account?: Account | Address;
 		nonce?: NonceOption;
-		metadata?: TransactionMetadata;
+		metadata: TMetadata;
 		restArgs: T;
 		execute: (argsWithNonce: T & {nonce: number}) => Promise<R>;
 		extractHash: (result: R) => Hash;
@@ -260,12 +261,11 @@ export function createTrackedWalletClient<
 		const actualNonce = await verifyTransactionNonce(hash, intendedNonce);
 
 		// Create tracked transaction record
-		const trackedTx = createTrackedTransaction(
+		const trackedTx = createTrackedTransactionRecord(
 			hash,
 			from,
 			actualNonce,
 			metadata,
-			restArgs,
 		);
 
 		// Emit transaction broadcasted event
@@ -280,7 +280,7 @@ export function createTrackedWalletClient<
 	 */
 	async function executeTrackedRawTransaction<R>(args: {
 		serializedTransaction: TransactionSerialized;
-		metadata?: TransactionMetadata;
+		metadata: TMetadata;
 		execute: () => Promise<R>;
 		extractHash: (result: R) => Hash;
 	}): Promise<R> {
@@ -299,12 +299,11 @@ export function createTrackedWalletClient<
 		// (wallet cannot override nonce in an already-signed transaction)
 
 		// Create tracked transaction record
-		const trackedTx = createTrackedTransaction(
+		const trackedTx = createTrackedTransactionRecord(
 			hash,
 			from,
 			intendedNonce,
 			metadata,
-			{serializedTransaction},
 		);
 
 		// Emit transaction broadcasted event
@@ -335,6 +334,7 @@ export function createTrackedWalletClient<
 			TChainOverride extends Chain | undefined = undefined,
 		>(
 			args: TrackedWriteContractParameters<
+				TMetadata,
 				TAbi,
 				TFunctionName,
 				TArgs,
@@ -348,7 +348,7 @@ export function createTrackedWalletClient<
 			return executeTrackedTransaction({
 				account: normalizeAccount(args.account),
 				nonce,
-				metadata,
+				metadata: metadata as TMetadata,
 				restArgs: writeArgs,
 				execute: (argsWithNonce) =>
 					walletClient.writeContract(argsWithNonce as any),
@@ -357,14 +357,19 @@ export function createTrackedWalletClient<
 		},
 
 		async sendTransaction<TChainOverride extends Chain | undefined = undefined>(
-			args: TrackedSendTransactionParameters<TChain, TAccount, TChainOverride>,
+			args: TrackedSendTransactionParameters<
+				TMetadata,
+				TChain,
+				TAccount,
+				TChainOverride
+			>,
 		): Promise<Hash> {
 			const {metadata, nonce, ...sendArgs} = args;
 
 			return executeTrackedTransaction({
 				account: normalizeAccount(args.account),
 				nonce,
-				metadata,
+				metadata: metadata as TMetadata,
 				restArgs: sendArgs,
 				execute: (argsWithNonce) =>
 					walletClient.sendTransaction(argsWithNonce as any),
@@ -373,13 +378,13 @@ export function createTrackedWalletClient<
 		},
 
 		async sendRawTransaction(
-			args: TrackedRawTransactionParameters,
+			args: TrackedRawTransactionParameters<TMetadata>,
 		): Promise<Hash> {
 			const {metadata, serializedTransaction} = args;
 
 			return executeTrackedRawTransaction({
 				serializedTransaction,
-				metadata,
+				metadata: metadata as TMetadata,
 				execute: () => walletClient.sendRawTransaction({serializedTransaction}),
 				extractHash: (hash) => hash,
 			});
@@ -403,6 +408,7 @@ export function createTrackedWalletClient<
 			TChainOverride extends Chain | undefined = undefined,
 		>(
 			args: TrackedWriteContractParameters<
+				TMetadata,
 				TAbi,
 				TFunctionName,
 				TArgs,
@@ -416,7 +422,7 @@ export function createTrackedWalletClient<
 			return executeTrackedTransaction({
 				account: normalizeAccount(args.account),
 				nonce,
-				metadata,
+				metadata: metadata as TMetadata,
 				restArgs: writeArgs,
 				execute: (argsWithNonce) =>
 					walletClient.writeContractSync(argsWithNonce as any),
@@ -427,14 +433,19 @@ export function createTrackedWalletClient<
 		async sendTransactionSync<
 			TChainOverride extends Chain | undefined = undefined,
 		>(
-			args: TrackedSendTransactionParameters<TChain, TAccount, TChainOverride>,
+			args: TrackedSendTransactionParameters<
+				TMetadata,
+				TChain,
+				TAccount,
+				TChainOverride
+			>,
 		): Promise<TransactionReceipt> {
 			const {metadata, nonce, ...sendArgs} = args;
 
 			return executeTrackedTransaction({
 				account: normalizeAccount(args.account),
 				nonce,
-				metadata,
+				metadata: metadata as TMetadata,
 				restArgs: sendArgs,
 				execute: (argsWithNonce) =>
 					walletClient.sendTransactionSync(argsWithNonce as any),
@@ -443,13 +454,13 @@ export function createTrackedWalletClient<
 		},
 
 		async sendRawTransactionSync(
-			args: TrackedRawTransactionParameters,
+			args: TrackedRawTransactionParameters<TMetadata>,
 		): Promise<TransactionReceipt> {
 			const {metadata, serializedTransaction} = args;
 
 			return executeTrackedRawTransaction({
 				serializedTransaction,
-				metadata,
+				metadata: metadata as TMetadata,
 				execute: () =>
 					walletClient.sendRawTransactionSync({serializedTransaction}),
 				extractHash: (receipt) => receipt.transactionHash,
@@ -460,11 +471,12 @@ export function createTrackedWalletClient<
 		// Event subscription methods
 		// ============================================
 
-		onTransactionBroadcasted: (listener: (event: TrackedTransaction) => void) =>
-			emitter.on('transaction:broadcasted', listener),
+		onTransactionBroadcasted: (
+			listener: (event: TrackedTransaction<TMetadata>) => void,
+		) => emitter.on('transaction:broadcasted', listener),
 
 		offTransactionBroadcasted: (
-			listener: (event: TrackedTransaction) => void,
+			listener: (event: TrackedTransaction<TMetadata>) => void,
 		) => emitter.off('transaction:broadcasted', listener),
 	};
 }
