@@ -15,8 +15,10 @@ describe('Clear Abort', () => {
 
 	const accountA = '0xaaaa000000000000000000000000000000000001' as const;
 	const accountB = '0xbbbb000000000000000000000000000000000002' as const;
-	const txHashA = '0xa000000000000000000000000000000000000000000000000000000000000001' as const;
-	const txHashB = '0xb000000000000000000000000000000000000000000000000000000000000001' as const;
+	const txHashA =
+		'0xa000000000000000000000000000000000000000000000000000000000000001' as const;
+	const txHashB =
+		'0xb000000000000000000000000000000000000000000000000000000000000001' as const;
 
 	beforeEach(() => {
 		const {provider, controller: ctrl} = createMockProvider({
@@ -53,11 +55,13 @@ describe('Clear Abort', () => {
 			observer.add('intent-1', intentA);
 
 			// Add tx to mempool
-			controller.addToMempool(createMockTx({
-				hash: txHashA,
-				from: accountA,
-				nonce: 0,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashA,
+					from: accountA,
+					nonce: 0,
+				}),
+			);
 
 			// Set up a delay and clear during the delay
 			controller.setLatency(50);
@@ -97,11 +101,13 @@ describe('Clear Abort', () => {
 			observer.add('intent-1', intentA);
 
 			// Add tx to mempool
-			controller.addToMempool(createMockTx({
-				hash: txHashA,
-				from: accountA,
-				nonce: 0,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashA,
+					from: accountA,
+					nonce: 0,
+				}),
+			);
 
 			// Set up hook to clear midway through processing
 			let requestCount = 0;
@@ -127,7 +133,8 @@ describe('Clear Abort', () => {
 				from: accountA,
 				nonce: 0,
 			});
-			const tx2Hash = '0xa000000000000000000000000000000000000000000000000000000000000002' as `0x${string}`;
+			const tx2Hash =
+				'0xa000000000000000000000000000000000000000000000000000000000000002' as `0x${string}`;
 			const tx2 = createBroadcastedTx({
 				hash: tx2Hash,
 				from: accountA,
@@ -137,16 +144,20 @@ describe('Clear Abort', () => {
 			observer.add('intent-2', createIntent({transactions: [tx2]}));
 
 			// Add txs to mempool
-			controller.addToMempool(createMockTx({
-				hash: txHashA,
-				from: accountA,
-				nonce: 0,
-			}));
-			controller.addToMempool(createMockTx({
-				hash: tx2Hash,
-				from: accountA,
-				nonce: 1,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashA,
+					from: accountA,
+					nonce: 0,
+				}),
+			);
+			controller.addToMempool(
+				createMockTx({
+					hash: tx2Hash,
+					from: accountA,
+					nonce: 1,
+				}),
+			);
 
 			// Set up hook to clear after processing first intent
 			let processedIntents = 0;
@@ -188,11 +199,13 @@ describe('Clear Abort', () => {
 			observer.add('intent-1', createIntent({transactions: [txB]}));
 
 			// Add tx to mempool for Account B
-			controller.addToMempool(createMockTx({
-				hash: txHashB,
-				from: accountB,
-				nonce: 0,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashB,
+					from: accountB,
+					nonce: 0,
+				}),
+			);
 
 			await observer.process();
 
@@ -215,11 +228,13 @@ describe('Clear Abort', () => {
 			});
 			observer.add(sharedId, createIntent({transactions: [txA]}));
 
-			controller.addToMempool(createMockTx({
-				hash: txHashA,
-				from: accountA,
-				nonce: 0,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashA,
+					from: accountA,
+					nonce: 0,
+				}),
+			);
 
 			// Start processing with delay
 			controller.setLatency(30);
@@ -237,11 +252,13 @@ describe('Clear Abort', () => {
 			});
 			observer.add(sharedId, createIntent({transactions: [txB]}));
 
-			controller.addToMempool(createMockTx({
-				hash: txHashB,
-				from: accountB,
-				nonce: 0,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashB,
+					from: accountB,
+					nonce: 0,
+				}),
+			);
 
 			await processPromise;
 
@@ -287,11 +304,13 @@ describe('Clear Abort', () => {
 			});
 			observer.add('intent-1', createIntent({transactions: [txB]}));
 
-			controller.addToMempool(createMockTx({
-				hash: txHashB,
-				from: accountB,
-				nonce: 0,
-			}));
+			controller.addToMempool(
+				createMockTx({
+					hash: txHashB,
+					from: accountB,
+					nonce: 0,
+				}),
+			);
 
 			// Process - this should work normally for Account B
 			await observer.process();
