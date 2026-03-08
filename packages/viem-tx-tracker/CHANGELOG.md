@@ -1,5 +1,11 @@
 # @etherkit/viem-tx-tracker
 
+## 0.0.5
+
+### Patch Changes
+
+- populateMetadata
+
 ## 0.0.4
 
 ### Patch Changes
