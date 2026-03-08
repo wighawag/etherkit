@@ -750,7 +750,8 @@ describe('TrackedWalletClient with populateMetadata', () => {
 
 			// Verify metadata was passed through
 			expect(listener).toHaveBeenCalledTimes(1);
-			const emittedEvent = listener.mock.calls[0][0] as TrackedTransaction<PopulatedMetadata>;
+			const emittedEvent = listener.mock
+				.calls[0][0] as TrackedTransaction<PopulatedMetadata>;
 			expect(emittedEvent.metadata).toEqual({
 				type: 'unknown',
 				name: 'ETH transfer',
@@ -768,13 +769,15 @@ describe('TrackedWalletClient with populateMetadata', () => {
 			purpose: string;
 			priority?: number;
 		};
-		type ExtendedMetadata = ExtendedFunctionCallMetadata | {
-			type: 'unknown';
-			name: string;
-			data: any[];
-			purpose: string;
-			priority?: number;
-		};
+		type ExtendedMetadata =
+			| ExtendedFunctionCallMetadata
+			| {
+					type: 'unknown';
+					name: string;
+					data: any[];
+					purpose: string;
+					priority?: number;
+			  };
 
 		let extendedClient: TrackedWalletClientAutoPopulate<
 			ExtendedMetadata,

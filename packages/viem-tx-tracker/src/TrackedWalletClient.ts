@@ -18,7 +18,6 @@ import {Emitter} from 'radiate';
 import type {
 	BlockTag,
 	CreateTrackedWalletClientOptions,
-	FunctionCallMetadata,
 	NonceOption,
 	PopulatedMetadata,
 	TrackedRawTransactionParameters,
@@ -616,10 +615,12 @@ export function createTrackedWalletClient<TMetadata>(
 }
 
 /**
-	* Create an auto-populate builder for TrackedWalletClient.
-	* This builder auto-populates operation, functionName and args in writeContract metadata.
-	*/
-function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+ * Create an auto-populate builder for TrackedWalletClient.
+ * This builder auto-populates operation, functionName and args in writeContract metadata.
+ */
+function createAutoPopulateBuilder<
+	TMetadata,
+>(): TrackedWalletClientAutoPopulateBuilder<TMetadata> {
 	return {
 		using<TClient extends WalletClient>(
 			walletClient: TClient,
@@ -641,8 +642,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}>();
 
 			/**
-				* Resolve the nonce to use for a transaction.
-				*/
+			 * Resolve the nonce to use for a transaction.
+			 */
 			async function resolveNonce(
 				nonceOption: NonceOption | undefined,
 				from: Address,
@@ -658,8 +659,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Extract common transaction context (account, nonce) from request args.
-				*/
+			 * Extract common transaction context (account, nonce) from request args.
+			 */
 			async function extractTransactionContext(args: {
 				account?: Account | Address;
 				nonce?: NonceOption;
@@ -679,8 +680,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Extract transaction context from a serialized (signed) transaction.
-				*/
+			 * Extract transaction context from a serialized (signed) transaction.
+			 */
 			async function extractRawTransactionContext(
 				serializedTransaction: TransactionSerialized,
 			): Promise<TransactionContext> {
@@ -703,8 +704,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Fetch the transaction after broadcast to verify nonce.
-				*/
+			 * Fetch the transaction after broadcast to verify nonce.
+			 */
 			async function verifyTransactionNonce(
 				hash: Hash,
 				intendedNonce: number,
@@ -731,8 +732,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Create a tracked transaction record.
-				*/
+			 * Create a tracked transaction record.
+			 */
 			function createTrackedTransactionRecord(
 				txHash: Hash,
 				from: Address,
@@ -750,9 +751,9 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Validate that user didn't provide operation, functionName or args in metadata
-				* when populateMetadata is enabled.
-				*/
+			 * Validate that user didn't provide operation, functionName or args in metadata
+			 * when populateMetadata is enabled.
+			 */
 			function validateNoAutoPopulatedFieldsInMetadata(
 				userMetadata: unknown,
 			): void {
@@ -779,8 +780,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Common wrapper for transaction methods that broadcast.
-				*/
+			 * Common wrapper for transaction methods that broadcast.
+			 */
 			async function executeTrackedTransaction<T, R>(args: {
 				account?: Account | Address;
 				nonce?: NonceOption;
@@ -816,8 +817,8 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}
 
 			/**
-				* Common wrapper for raw transaction broadcasts.
-				*/
+			 * Common wrapper for raw transaction broadcasts.
+			 */
 			async function executeTrackedRawTransaction<R>(args: {
 				serializedTransaction: TransactionSerialized;
 				metadata: TMetadata;
@@ -826,8 +827,9 @@ function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulate
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
 
-				const {from, intendedNonce} =
-					await extractRawTransactionContext(serializedTransaction);
+				const {from, intendedNonce} = await extractRawTransactionContext(
+					serializedTransaction,
+				);
 
 				const result = await execute();
 				const hash = extractHash(result);
