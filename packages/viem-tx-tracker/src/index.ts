@@ -5,4 +5,5 @@ export type * from './types.js';
 export {
 	createTrackedWalletClient,
 	type TrackedWalletClientBuilder,
+	type TrackedWalletClientAutoPopulateBuilder,
 } from './TrackedWalletClient.js';

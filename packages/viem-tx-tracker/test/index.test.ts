@@ -16,7 +16,10 @@ import {foundry} from 'viem/chains';
 import {
 	createTrackedWalletClient,
 	type TrackedWalletClient,
+	type TrackedWalletClientAutoPopulate,
 	type TrackedTransaction,
+	type PopulatedMetadata,
+	type FunctionCallMetadata,
 } from '../src/index.js';
 import {RPC_URL} from './prool/url.js';
 import {TEST_CONTRACT_ABI, TEST_CONTRACT_BYTECODE} from './utils/data.js';
@@ -551,6 +554,286 @@ describe('TrackedWalletClient', () => {
 
 			// Cleanup
 			trackedClient.offTransactionBroadcasted(listener);
+		});
+	});
+});
+
+describe('TrackedWalletClient with populateMetadata', () => {
+	let publicClient: PublicClient;
+	let walletClient: WalletClient<Transport, Chain, Account>;
+	let autoPopulateClient: TrackedWalletClientAutoPopulate<
+		PopulatedMetadata,
+		Transport,
+		Chain,
+		Account
+	>;
+	let account: ReturnType<typeof privateKeyToAccount>;
+
+	beforeAll(() => {
+		account = privateKeyToAccount(TEST_PRIVATE_KEY);
+
+		publicClient = createPublicClient({
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		walletClient = createWalletClient({
+			account,
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		// Create client with populateMetadata: true
+		autoPopulateClient = createTrackedWalletClient({
+			populateMetadata: true,
+		}).using(walletClient, publicClient);
+	});
+
+	describe('writeContract with auto-populate', () => {
+		let tokenAddress: Address;
+
+		beforeAll(async () => {
+			// Deploy the token contract for testing
+			const deployHash = await walletClient.deployContract({
+				abi: TEST_CONTRACT_ABI,
+				bytecode: TEST_CONTRACT_BYTECODE,
+				args: [account.address, parseEther('1000')],
+			});
+
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: deployHash,
+			});
+			tokenAddress = receipt.contractAddress!;
+		});
+
+		it('should auto-populate operation, functionName and args in metadata', async () => {
+			const listener = vi.fn();
+			autoPopulateClient.onTransactionBroadcasted(listener);
+
+			const txHash = await autoPopulateClient.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('10')],
+				// No metadata needed - operation, functionName and args are auto-populated
+			});
+
+			expect(txHash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: txHash,
+			});
+			expect(receipt.status).toBe('success');
+
+			// Verify metadata was auto-populated with FunctionCallMetadata
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction<FunctionCallMetadata> =
+				listener.mock.calls[0][0];
+			expect(emittedEvent.metadata.type).toBe('functionCall');
+			expect(emittedEvent.metadata.functionName).toBe('transfer');
+			expect(emittedEvent.metadata.args).toEqual([
+				RECIPIENT_ADDRESS,
+				parseEther('10'),
+			]);
+
+			// Cleanup
+			autoPopulateClient.offTransactionBroadcasted(listener);
+		});
+
+		it('should throw if functionName is provided in metadata', async () => {
+			await expect(
+				autoPopulateClient.writeContract({
+					address: tokenAddress,
+					abi: TEST_CONTRACT_ABI,
+					functionName: 'transfer',
+					args: [RECIPIENT_ADDRESS, parseEther('5')],
+					// @ts-expect-error - TypeScript should prevent this, but we test runtime behavior
+					metadata: {functionName: 'shouldNotBeAllowed'},
+				}),
+			).rejects.toThrow('Cannot specify functionName in metadata');
+		});
+
+		it('should throw if args is provided in metadata', async () => {
+			await expect(
+				autoPopulateClient.writeContract({
+					address: tokenAddress,
+					abi: TEST_CONTRACT_ABI,
+					functionName: 'transfer',
+					args: [RECIPIENT_ADDRESS, parseEther('5')],
+					// @ts-expect-error - TypeScript should prevent this, but we test runtime behavior
+					metadata: {args: ['shouldNotBeAllowed']},
+				}),
+			).rejects.toThrow('Cannot specify args in metadata');
+		});
+
+		it('should throw if type is provided in metadata', async () => {
+			await expect(
+				autoPopulateClient.writeContract({
+					address: tokenAddress,
+					abi: TEST_CONTRACT_ABI,
+					functionName: 'transfer',
+					args: [RECIPIENT_ADDRESS, parseEther('5')],
+					// @ts-expect-error - TypeScript should prevent this, but we test runtime behavior
+					metadata: {type: 'shouldNotBeAllowed'},
+				}),
+			).rejects.toThrow('Cannot specify type in metadata');
+		});
+	});
+
+	describe('writeContractSync with auto-populate', () => {
+		let tokenAddress: Address;
+
+		beforeAll(async () => {
+			// Deploy the token contract for testing
+			const deployHash = await walletClient.deployContract({
+				abi: TEST_CONTRACT_ABI,
+				bytecode: TEST_CONTRACT_BYTECODE,
+				args: [account.address, parseEther('1000')],
+			});
+
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: deployHash,
+			});
+			tokenAddress = receipt.contractAddress!;
+		});
+
+		it('should auto-populate operation, functionName and args in metadata', async () => {
+			const listener = vi.fn();
+			autoPopulateClient.onTransactionBroadcasted(listener);
+
+			const receipt = await autoPopulateClient.writeContractSync({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('10')],
+			});
+
+			expect(receipt.status).toBe('success');
+
+			// Verify metadata was auto-populated with FunctionCallMetadata
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction<FunctionCallMetadata> =
+				listener.mock.calls[0][0];
+			expect(emittedEvent.metadata.type).toBe('functionCall');
+			expect(emittedEvent.metadata.functionName).toBe('transfer');
+			expect(emittedEvent.metadata.args).toEqual([
+				RECIPIENT_ADDRESS,
+				parseEther('10'),
+			]);
+
+			// Cleanup
+			autoPopulateClient.offTransactionBroadcasted(listener);
+		});
+	});
+
+	describe('sendTransaction still requires full metadata', () => {
+		it('should require full metadata for sendTransaction using unknown operation', async () => {
+			const listener = vi.fn();
+			autoPopulateClient.onTransactionBroadcasted(listener);
+
+			const txHash = await autoPopulateClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {
+					type: 'unknown',
+					name: 'ETH transfer',
+					data: [],
+				},
+			});
+
+			expect(txHash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: txHash,
+			});
+			expect(receipt.status).toBe('success');
+
+			// Verify metadata was passed through
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent = listener.mock.calls[0][0] as TrackedTransaction<PopulatedMetadata>;
+			expect(emittedEvent.metadata).toEqual({
+				type: 'unknown',
+				name: 'ETH transfer',
+				data: [],
+			});
+
+			// Cleanup
+			autoPopulateClient.offTransactionBroadcasted(listener);
+		});
+	});
+
+	describe('extended metadata with populateMetadata', () => {
+		// Extended metadata that includes FunctionCallMetadata as part of a union
+		type ExtendedFunctionCallMetadata = FunctionCallMetadata & {
+			purpose: string;
+			priority?: number;
+		};
+		type ExtendedMetadata = ExtendedFunctionCallMetadata | {
+			type: 'unknown';
+			name: string;
+			data: any[];
+			purpose: string;
+			priority?: number;
+		};
+
+		let extendedClient: TrackedWalletClientAutoPopulate<
+			ExtendedMetadata,
+			Transport,
+			Chain,
+			Account
+		>;
+		let tokenAddress: Address;
+
+		beforeAll(async () => {
+			extendedClient = createTrackedWalletClient<ExtendedMetadata>({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			// Deploy the token contract for testing
+			const deployHash = await walletClient.deployContract({
+				abi: TEST_CONTRACT_ABI,
+				bytecode: TEST_CONTRACT_BYTECODE,
+				args: [account.address, parseEther('1000')],
+			});
+
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: deployHash,
+			});
+			tokenAddress = receipt.contractAddress!;
+		});
+
+		it('should require extended fields but auto-populate operation, functionName and args', async () => {
+			const listener = vi.fn();
+			extendedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await extendedClient.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('5')],
+				metadata: {
+					purpose: 'Token swap', // Required extended field
+					priority: 1, // Optional extended field
+				},
+			});
+
+			expect(txHash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+
+			// Verify metadata includes both auto-populated and user-provided fields
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction<ExtendedFunctionCallMetadata> =
+				listener.mock.calls[0][0];
+			expect(emittedEvent.metadata.type).toBe('functionCall');
+			expect(emittedEvent.metadata.functionName).toBe('transfer');
+			expect(emittedEvent.metadata.args).toEqual([
+				RECIPIENT_ADDRESS,
+				parseEther('5'),
+			]);
+			expect(emittedEvent.metadata.purpose).toBe('Token swap');
+			expect(emittedEvent.metadata.priority).toBe(1);
+
+			// Cleanup
+			extendedClient.offTransactionBroadcasted(listener);
 		});
 	});
 });

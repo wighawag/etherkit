@@ -17,12 +17,16 @@ import {
 import {Emitter} from 'radiate';
 import type {
 	BlockTag,
-	MetadataField,
+	CreateTrackedWalletClientOptions,
+	FunctionCallMetadata,
 	NonceOption,
+	PopulatedMetadata,
 	TrackedRawTransactionParameters,
 	TrackedSendTransactionParameters,
 	TrackedTransaction,
 	TrackedWalletClient,
+	TrackedWalletClientAutoPopulate,
+	TrackedWriteContractAutoPopulateParameters,
 	TrackedWriteContractParameters,
 } from './types.js';
 
@@ -114,6 +118,31 @@ export interface TrackedWalletClientBuilder<TMetadata> {
 }
 
 /**
+ * Builder interface returned by createTrackedWalletClient with populateMetadata: true.
+ * This builder returns a TrackedWalletClientAutoPopulate that auto-populates operation, functionName and args.
+ * TMetadata must be a type where FunctionCallMetadata is assignable to it.
+ */
+export interface TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+	/**
+	 * Create the tracked wallet client using the provided wallet and public clients.
+	 * writeContract and writeContractSync will automatically populate operation, functionName and args.
+	 *
+	 * @param walletClient - The underlying viem WalletClient
+	 * @param publicClient - A PublicClient for nonce fetching and tx verification
+	 * @returns A TrackedWalletClientAutoPopulate instance
+	 */
+	using<TClient extends WalletClient>(
+		walletClient: TClient,
+		publicClient: PublicClient,
+	): TrackedWalletClientAutoPopulate<
+		TMetadata,
+		InferTransport<TClient>,
+		InferChain<TClient>,
+		InferAccount<TClient>
+	>;
+}
+
+/**
  * Create a tracked wallet client that wraps a viem WalletClient.
  *
  * The tracked client provides the same API as WalletClient but with:
@@ -127,18 +156,51 @@ export interface TrackedWalletClientBuilder<TMetadata> {
  *
  * @example
  * ```typescript
- * // With required metadata
+ * // Standard mode with required metadata
  * const tracked = createTrackedWalletClient<{purpose: string}>()
  *   .using(walletClient, publicClient);
  *
- * // With optional metadata
+ * // Standard mode with optional metadata
  * const tracked = createTrackedWalletClient<{purpose: string} | undefined>()
+ *   .using(walletClient, publicClient);
+ *
+ * // Auto-populate mode - functionName and args are auto-populated
+ * const tracked = createTrackedWalletClient({ populateMetadata: true })
+ *   .using(walletClient, publicClient);
+ *
+ * // Auto-populate mode with extended metadata
+ * type MyMetadata = OperationMetadata & { purpose: string };
+ * const tracked = createTrackedWalletClient<MyMetadata>({ populateMetadata: true })
  *   .using(walletClient, publicClient);
  * ```
  */
+// Overload 1: Standard mode, no options
 export function createTrackedWalletClient<
 	TMetadata,
->(): TrackedWalletClientBuilder<TMetadata> {
+>(): TrackedWalletClientBuilder<TMetadata>;
+
+// Overload 2: Auto-populate mode with default PopulatedMetadata
+export function createTrackedWalletClient(options: {
+	populateMetadata: true;
+}): TrackedWalletClientAutoPopulateBuilder<PopulatedMetadata>;
+
+// Overload 3: Auto-populate mode with custom metadata (must allow FunctionCallMetadata)
+export function createTrackedWalletClient<TMetadata>(options: {
+	populateMetadata: true;
+}): TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+
+// Implementation
+export function createTrackedWalletClient<TMetadata>(
+	options?: CreateTrackedWalletClientOptions<boolean>,
+):
+	| TrackedWalletClientBuilder<TMetadata>
+	| TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+	const populateMetadata = options?.populateMetadata ?? false;
+
+	if (populateMetadata) {
+		return createAutoPopulateBuilder<TMetadata>() as TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+	}
+
 	return {
 		using<TClient extends WalletClient>(
 			walletClient: TClient,
@@ -493,6 +555,435 @@ export function createTrackedWalletClient<
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						restArgs: writeArgs,
+						execute: (argsWithNonce) =>
+							walletClient.writeContractSync(argsWithNonce as any),
+						extractHash: (receipt) => receipt.transactionHash,
+					});
+				},
+
+				async sendTransactionSync<
+					TChainOverride extends Chain | undefined = undefined,
+				>(
+					args: TrackedSendTransactionParameters<
+						TMetadata,
+						TChain,
+						TAccount,
+						TChainOverride
+					>,
+				): Promise<TransactionReceipt> {
+					const {metadata, nonce, ...sendArgs} = args;
+
+					return executeTrackedTransaction({
+						account: normalizeAccount(args.account),
+						nonce,
+						metadata: metadata as TMetadata,
+						restArgs: sendArgs,
+						execute: (argsWithNonce) =>
+							walletClient.sendTransactionSync(argsWithNonce as any),
+						extractHash: (receipt) => receipt.transactionHash,
+					});
+				},
+
+				async sendRawTransactionSync(
+					args: TrackedRawTransactionParameters<TMetadata>,
+				): Promise<TransactionReceipt> {
+					const {metadata, serializedTransaction} = args;
+
+					return executeTrackedRawTransaction({
+						serializedTransaction,
+						metadata: metadata as TMetadata,
+						execute: () =>
+							walletClient.sendRawTransactionSync({serializedTransaction}),
+						extractHash: (receipt) => receipt.transactionHash,
+					});
+				},
+
+				// ============================================
+				// Event subscription methods
+				// ============================================
+
+				onTransactionBroadcasted: (
+					listener: (event: TrackedTransaction<TMetadata>) => void,
+				) => emitter.on('transaction:broadcasted', listener),
+
+				offTransactionBroadcasted: (
+					listener: (event: TrackedTransaction<TMetadata>) => void,
+				) => emitter.off('transaction:broadcasted', listener),
+			};
+		},
+	};
+}
+
+/**
+	* Create an auto-populate builder for TrackedWalletClient.
+	* This builder auto-populates operation, functionName and args in writeContract metadata.
+	*/
+function createAutoPopulateBuilder<TMetadata>(): TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+	return {
+		using<TClient extends WalletClient>(
+			walletClient: TClient,
+			publicClient: PublicClient,
+		): TrackedWalletClientAutoPopulate<
+			TMetadata,
+			InferTransport<TClient>,
+			InferChain<TClient>,
+			InferAccount<TClient>
+		> {
+			// Type aliases for internal use
+			type TTransport = InferTransport<TClient>;
+			type TChain = InferChain<TClient>;
+			type TAccount = InferAccount<TClient>;
+
+			// Create emitter for transaction broadcast events
+			const emitter = new Emitter<{
+				'transaction:broadcasted': TrackedTransaction<TMetadata>;
+			}>();
+
+			/**
+				* Resolve the nonce to use for a transaction.
+				*/
+			async function resolveNonce(
+				nonceOption: NonceOption | undefined,
+				from: Address,
+			): Promise<number> {
+				if (typeof nonceOption === 'number') {
+					return nonceOption;
+				}
+				const blockTag = isBlockTag(nonceOption) ? nonceOption : 'pending';
+				return await publicClient.getTransactionCount({
+					address: from,
+					blockTag,
+				});
+			}
+
+			/**
+				* Extract common transaction context (account, nonce) from request args.
+				*/
+			async function extractTransactionContext(args: {
+				account?: Account | Address;
+				nonce?: NonceOption;
+			}): Promise<TransactionContext> {
+				const account = args.account ?? walletClient.account;
+				const from = resolveAccountAddress(account);
+
+				if (!from) {
+					throw new Error(
+						'[TrackedWalletClient] No account available. ' +
+							'Provide an account in the request or configure the wallet client with an account.',
+					);
+				}
+
+				const intendedNonce = await resolveNonce(args.nonce, from);
+				return {from, intendedNonce};
+			}
+
+			/**
+				* Extract transaction context from a serialized (signed) transaction.
+				*/
+			async function extractRawTransactionContext(
+				serializedTransaction: TransactionSerialized,
+			): Promise<TransactionContext> {
+				const parsedTx = parseTransaction(serializedTransaction);
+
+				if (parsedTx.nonce === undefined) {
+					throw new Error(
+						'[TrackedWalletClient] Could not extract nonce from serialized transaction.',
+					);
+				}
+
+				const from = await recoverTransactionAddress({
+					serializedTransaction,
+				});
+
+				return {
+					from,
+					intendedNonce: parsedTx.nonce,
+				};
+			}
+
+			/**
+				* Fetch the transaction after broadcast to verify nonce.
+				*/
+			async function verifyTransactionNonce(
+				hash: Hash,
+				intendedNonce: number,
+			): Promise<number> {
+				try {
+					const tx = await publicClient.getTransaction({hash});
+					const actualNonce = tx.nonce;
+
+					if (actualNonce !== intendedNonce) {
+						console.warn(
+							`[TrackedWalletClient] Nonce mismatch: intended ${intendedNonce}, actual ${actualNonce}. ` +
+								`Wallet may have overridden the nonce.`,
+						);
+					}
+
+					return actualNonce;
+				} catch (fetchError) {
+					console.warn(
+						`[TrackedWalletClient] Could not fetch tx ${hash} after broadcast. ` +
+							`It may not be in the mempool yet.`,
+					);
+					return intendedNonce;
+				}
+			}
+
+			/**
+				* Create a tracked transaction record.
+				*/
+			function createTrackedTransactionRecord(
+				txHash: Hash,
+				from: Address,
+				nonce: number,
+				metadata: TMetadata,
+			): TrackedTransaction<TMetadata> {
+				return {
+					hash: txHash,
+					from,
+					nonce,
+					chainId: walletClient.chain?.id,
+					metadata,
+					broadcastTimestampMs: Date.now(),
+				};
+			}
+
+			/**
+				* Validate that user didn't provide operation, functionName or args in metadata
+				* when populateMetadata is enabled.
+				*/
+			function validateNoAutoPopulatedFieldsInMetadata(
+				userMetadata: unknown,
+			): void {
+				if (userMetadata && typeof userMetadata === 'object') {
+					if ('type' in userMetadata) {
+						throw new Error(
+							'[TrackedWalletClient] Cannot specify type in metadata when populateMetadata is enabled. ' +
+								'The type is automatically populated from the contract call.',
+						);
+					}
+					if ('functionName' in userMetadata) {
+						throw new Error(
+							'[TrackedWalletClient] Cannot specify functionName in metadata when populateMetadata is enabled. ' +
+								'The functionName is automatically populated from the contract call.',
+						);
+					}
+					if ('args' in userMetadata) {
+						throw new Error(
+							'[TrackedWalletClient] Cannot specify args in metadata when populateMetadata is enabled. ' +
+								'The args are automatically populated from the contract call.',
+						);
+					}
+				}
+			}
+
+			/**
+				* Common wrapper for transaction methods that broadcast.
+				*/
+			async function executeTrackedTransaction<T, R>(args: {
+				account?: Account | Address;
+				nonce?: NonceOption;
+				metadata: TMetadata;
+				restArgs: T;
+				execute: (argsWithNonce: T & {nonce: number}) => Promise<R>;
+				extractHash: (result: R) => Hash;
+			}): Promise<R> {
+				const {metadata, restArgs, execute, extractHash} = args;
+
+				const {from, intendedNonce} = await extractTransactionContext(args);
+
+				const result = await execute({
+					...restArgs,
+					nonce: intendedNonce,
+				} as T & {
+					nonce: number;
+				});
+				const hash = extractHash(result);
+
+				const actualNonce = await verifyTransactionNonce(hash, intendedNonce);
+
+				const trackedTx = createTrackedTransactionRecord(
+					hash,
+					from,
+					actualNonce,
+					metadata,
+				);
+
+				emitter.emit('transaction:broadcasted', trackedTx);
+
+				return result;
+			}
+
+			/**
+				* Common wrapper for raw transaction broadcasts.
+				*/
+			async function executeTrackedRawTransaction<R>(args: {
+				serializedTransaction: TransactionSerialized;
+				metadata: TMetadata;
+				execute: () => Promise<R>;
+				extractHash: (result: R) => Hash;
+			}): Promise<R> {
+				const {serializedTransaction, metadata, execute, extractHash} = args;
+
+				const {from, intendedNonce} =
+					await extractRawTransactionContext(serializedTransaction);
+
+				const result = await execute();
+				const hash = extractHash(result);
+
+				const trackedTx = createTrackedTransactionRecord(
+					hash,
+					from,
+					intendedNonce,
+					metadata,
+				);
+
+				emitter.emit('transaction:broadcasted', trackedTx);
+
+				return result;
+			}
+
+			return {
+				walletClient: walletClient as unknown as WalletClient<
+					TTransport,
+					TChain,
+					TAccount
+				>,
+				publicClient,
+
+				// ============================================
+				// Async methods (return hash)
+				// ============================================
+
+				async writeContract<
+					const TAbi extends Abi | readonly unknown[],
+					TFunctionName extends ContractFunctionName<
+						TAbi,
+						'nonpayable' | 'payable'
+					>,
+					TArgs extends ContractFunctionArgs<
+						TAbi,
+						'nonpayable' | 'payable',
+						TFunctionName
+					>,
+					TChainOverride extends Chain | undefined = undefined,
+				>(
+					args: TrackedWriteContractAutoPopulateParameters<
+						TMetadata,
+						TAbi,
+						TFunctionName,
+						TArgs,
+						TChain,
+						TAccount,
+						TChainOverride
+					>,
+				): Promise<Hash> {
+					const {metadata: userMetadata, nonce, ...writeArgs} = args;
+
+					// Validate that user didn't provide operation, functionName or args
+					validateNoAutoPopulatedFieldsInMetadata(userMetadata);
+
+					// Auto-populate type, functionName and args
+					const finalMetadata = {
+						...(userMetadata ?? {}),
+						type: 'functionCall' as const,
+						functionName: args.functionName as string,
+						args: args.args as readonly unknown[],
+					} as TMetadata;
+
+					return executeTrackedTransaction({
+						account: normalizeAccount(args.account),
+						nonce,
+						metadata: finalMetadata,
+						restArgs: writeArgs,
+						execute: (argsWithNonce) =>
+							walletClient.writeContract(argsWithNonce as any),
+						extractHash: (hash) => hash,
+					});
+				},
+
+				async sendTransaction<
+					TChainOverride extends Chain | undefined = undefined,
+				>(
+					args: TrackedSendTransactionParameters<
+						TMetadata,
+						TChain,
+						TAccount,
+						TChainOverride
+					>,
+				): Promise<Hash> {
+					const {metadata, nonce, ...sendArgs} = args;
+
+					return executeTrackedTransaction({
+						account: normalizeAccount(args.account),
+						nonce,
+						metadata: metadata as TMetadata,
+						restArgs: sendArgs,
+						execute: (argsWithNonce) =>
+							walletClient.sendTransaction(argsWithNonce as any),
+						extractHash: (hash) => hash,
+					});
+				},
+
+				async sendRawTransaction(
+					args: TrackedRawTransactionParameters<TMetadata>,
+				): Promise<Hash> {
+					const {metadata, serializedTransaction} = args;
+
+					return executeTrackedRawTransaction({
+						serializedTransaction,
+						metadata: metadata as TMetadata,
+						execute: () =>
+							walletClient.sendRawTransaction({serializedTransaction}),
+						extractHash: (hash) => hash,
+					});
+				},
+
+				// ============================================
+				// Sync methods (return receipt, wait for confirmation)
+				// ============================================
+
+				async writeContractSync<
+					const TAbi extends Abi | readonly unknown[],
+					TFunctionName extends ContractFunctionName<
+						TAbi,
+						'nonpayable' | 'payable'
+					>,
+					TArgs extends ContractFunctionArgs<
+						TAbi,
+						'nonpayable' | 'payable',
+						TFunctionName
+					>,
+					TChainOverride extends Chain | undefined = undefined,
+				>(
+					args: TrackedWriteContractAutoPopulateParameters<
+						TMetadata,
+						TAbi,
+						TFunctionName,
+						TArgs,
+						TChain,
+						TAccount,
+						TChainOverride
+					>,
+				): Promise<TransactionReceipt> {
+					const {metadata: userMetadata, nonce, ...writeArgs} = args;
+
+					// Validate that user didn't provide operation, functionName or args
+					validateNoAutoPopulatedFieldsInMetadata(userMetadata);
+
+					// Auto-populate type, functionName and args
+					const finalMetadata = {
+						...(userMetadata ?? {}),
+						type: 'functionCall' as const,
+						functionName: args.functionName as string,
+						args: args.args as readonly unknown[],
+					} as TMetadata;
+
+					return executeTrackedTransaction({
+						account: normalizeAccount(args.account),
+						nonce,
+						metadata: finalMetadata,
 						restArgs: writeArgs,
 						execute: (argsWithNonce) =>
 							walletClient.writeContractSync(argsWithNonce as any),
