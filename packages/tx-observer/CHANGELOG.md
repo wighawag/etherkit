@@ -1,5 +1,11 @@
 # @etherkit/tx-observer
 
+## 0.0.6
+
+### Patch Changes
+
+- fix eth_getTransactionCount call
+
 ## 0.0.5
 
 ### Patch Changes
