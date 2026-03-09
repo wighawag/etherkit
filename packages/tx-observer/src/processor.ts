@@ -584,7 +584,7 @@ export function createTransactionObserver(config: {
 			const account = transaction.from;
 			const tranactionCount = await provider.request({
 				method: 'eth_getTransactionCount',
-				params: [account, latestFinalizedBlock.hash],
+				params: [account, {blockHash: latestFinalizedBlock.hash}],
 			});
 			// Abort if clear() was called
 			if (clearGeneration !== startGeneration) {
