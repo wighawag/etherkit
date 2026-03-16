@@ -1,5 +1,11 @@
 # @etherkit/tx-observer
 
+## 0.0.7
+
+### Patch Changes
+
+- readonly inputs
+
 ## 0.0.6
 
 ### Patch Changes

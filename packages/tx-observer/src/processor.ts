@@ -2,6 +2,7 @@ import type {
 	EIP1193Provider,
 	EIP1193Block,
 	EIP1193ProviderWithoutEvents,
+	DeepReadonly,
 } from 'eip-1193';
 import {logs} from 'named-logs';
 import {throttle} from 'lodash-es';
@@ -9,6 +10,7 @@ import {Emitter} from 'radiate';
 const logger = logs('tx-observer');
 import type {
 	BroadcastedTransaction,
+	DeepWritable,
 	TransactionIntent,
 	TransactionIntentEvent,
 	TransactionIntentsAddedEvent,
@@ -161,6 +163,10 @@ function hasIntentStatusChanged(
 	);
 }
 
+function clone<T>(v: T): DeepWritable<T> {
+	return structuredClone(v) as DeepWritable<T>;
+}
+
 export function createTransactionObserver(config: {
 	finality: number;
 	throttle?: number;
@@ -183,18 +189,23 @@ export function createTransactionObserver(config: {
 	// Session counter to invalidate in-flight processing when clear() is called
 	let clearGeneration = 0;
 
-	function addMultiple(intents: {[id: string]: TransactionIntent}) {
+	function addMultiple(
+		intents: DeepReadonly<{[id: string]: TransactionIntent}>,
+	) {
 		logger.debug(`adding ${Object.keys(intents).length} intents...`);
 		for (const entry of Object.entries(intents)) {
 			_add(entry[0], entry[1]);
 		}
 		if (emitter.hasListeners('intents:added')) {
-			emitter.emit('intents:added', structuredClone(intents));
+			emitter.emit('intents:added', clone(intents));
 		}
 	}
 
-	function _add(id: string, intentToAdd: TransactionIntent) {
-		const intent = structuredClone(intentToAdd);
+	function _add(
+		id: string,
+		intentToAdd: DeepReadonly<TransactionIntent>,
+	): TransactionIntent {
+		const intent = clone(intentToAdd);
 		logger.debug(`adding intent ${id}...`);
 		const existing = intentsById[id];
 		if (!existing) {
@@ -212,13 +223,14 @@ export function createTransactionObserver(config: {
 				}
 			}
 		}
+		return intent;
 	}
 
-	function add(id: string, intentToAdd: TransactionIntent) {
+	function add(id: string, intentToAdd: DeepReadonly<TransactionIntent>) {
 		_add(id, intentToAdd);
 		if (emitter.hasListeners('intents:added')) {
 			emitter.emit('intents:added', {
-				[id]: structuredClone(intentToAdd),
+				[id]: clone(intentToAdd),
 			});
 		}
 	}
@@ -420,7 +432,7 @@ export function createTransactionObserver(config: {
 				if (emitter.hasListeners('intent:updated')) {
 					emitter.emit('intent:updated', {
 						id,
-						intent: structuredClone(intent),
+						intent: clone(intent),
 					});
 				}
 			}
@@ -430,7 +442,7 @@ export function createTransactionObserver(config: {
 				if (emitter.hasListeners('intent:status')) {
 					emitter.emit('intent:status', {
 						id,
-						intent: structuredClone(intent),
+						intent: clone(intent),
 					});
 				}
 			}

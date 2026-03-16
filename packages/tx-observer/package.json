@@ -1,6 +1,6 @@
 {
 	"name": "@etherkit/tx-observer",
-	"version": "0.0.6",
+	"version": "0.0.7",
 	"description": "A lightweight TypeScript library for tracking and monitoring Ethereum transactions throughout their lifecycle",
 	"keywords": [
 		"ethereum",

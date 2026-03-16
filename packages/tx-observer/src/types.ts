@@ -92,3 +92,30 @@ export type TransactionIntentsAddedEvent = {
  * Event payload for adding intents
  */
 export type TransactionIntentsRemovedEvent = string[];
+
+/**
+ * Deep readonly type to prevent direct mutation of nested data.
+ */
+export type DeepReadonly<T> = T extends (infer U)[]
+	? ReadonlyArray<DeepReadonly<U>>
+	: T extends Map<infer K, infer V>
+		? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
+		: T extends Set<infer U>
+			? ReadonlySet<DeepReadonly<U>>
+			: T extends object
+				? {readonly [K in keyof T]: DeepReadonly<T[K]>}
+				: T;
+
+/**
+ * Reverse of DeepReadonly. Removes 'readonly' from all nested properties.
+ */
+export type DeepWritable<T> =
+	T extends ReadonlyMap<infer K, infer V>
+		? Map<DeepWritable<K>, DeepWritable<V>>
+		: T extends ReadonlySet<infer U>
+			? Set<DeepWritable<U>>
+			: T extends ReadonlyArray<infer U>
+				? Array<DeepWritable<U>>
+				: T extends object
+					? {-readonly [K in keyof T]: DeepWritable<T[K]>}
+					: T;
