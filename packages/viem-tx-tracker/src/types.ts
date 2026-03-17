@@ -467,42 +467,41 @@ export interface TrackedWalletClient<
 	// ============================================
 
 	/**
-	 * Subscribe to transaction broadcast events.
-	 * Called immediately after a transaction is successfully broadcast.
-	 * @param listener - Callback function receiving TrackedTransaction with TMetadata
+	 * Subscribe to transaction events.
+	 * @param event - The event type to subscribe to
+	 * @param listener - Callback function receiving the event data
 	 * @returns Unsubscribe function
 	 */
-	onTransactionBroadcasted(
-		listener: (event: TrackedTransaction<TMetadata>) => void,
+	on<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+		event: TEvent,
+		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
 	): () => void;
 
 	/**
-	 * Unsubscribe from transaction broadcast events.
-	 * @param listener - The same listener function passed to onTransactionBroadcasted
+	 * Unsubscribe from transaction events.
+	 * @param event - The event type to unsubscribe from
+	 * @param listener - The same listener function passed to on
 	 */
-	offTransactionBroadcasted(
-		listener: (event: TrackedTransaction<TMetadata>) => void,
-	): void;
-
-	/**
-	 * Subscribe to transaction fetched events.
-	 * Fires when full transaction data is successfully fetched from chain.
-	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
-	 * @param listener - Callback function receiving KnownTrackedTransaction with TMetadata
-	 * @returns Unsubscribe function
-	 */
-	onTransactionFetched(
-		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
-	): () => void;
-
-	/**
-	 * Unsubscribe from transaction fetched events.
-	 * @param listener - The same listener function passed to onTransactionFetched
-	 */
-	offTransactionFetched(
-		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+	off<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+		event: TEvent,
+		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
 	): void;
 }
+
+/**
+ * Event map for TrackedWalletClient events.
+ */
+export type TrackedWalletClientEvents<TMetadata> = {
+	/**
+	 * Emitted immediately after a transaction is successfully broadcast.
+	 */
+	'transaction:broadcasted': TrackedTransaction<TMetadata>;
+	/**
+	 * Emitted when full transaction data is successfully fetched from chain.
+	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
+	 */
+	'transaction:fetched': KnownTrackedTransaction<TMetadata>;
+};
 
 /**
  * A wallet client wrapper that tracks transactions with auto-populated metadata.
@@ -633,39 +632,23 @@ export interface TrackedWalletClientAutoPopulate<
 	// ============================================
 
 	/**
-	 * Subscribe to transaction broadcast events.
-	 * Called immediately after a transaction is successfully broadcast.
-	 * @param listener - Callback function receiving TrackedTransaction with TMetadata
+	 * Subscribe to transaction events.
+	 * @param event - The event type to subscribe to
+	 * @param listener - Callback function receiving the event data
 	 * @returns Unsubscribe function
 	 */
-	onTransactionBroadcasted(
-		listener: (event: TrackedTransaction<TMetadata>) => void,
+	on<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+		event: TEvent,
+		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
 	): () => void;
 
 	/**
-	 * Unsubscribe from transaction broadcast events.
-	 * @param listener - The same listener function passed to onTransactionBroadcasted
+	 * Unsubscribe from transaction events.
+	 * @param event - The event type to unsubscribe from
+	 * @param listener - The same listener function passed to on
 	 */
-	offTransactionBroadcasted(
-		listener: (event: TrackedTransaction<TMetadata>) => void,
-	): void;
-
-	/**
-	 * Subscribe to transaction fetched events.
-	 * Fires when full transaction data is successfully fetched from chain.
-	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
-	 * @param listener - Callback function receiving KnownTrackedTransaction with TMetadata
-	 * @returns Unsubscribe function
-	 */
-	onTransactionFetched(
-		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
-	): () => void;
-
-	/**
-	 * Unsubscribe from transaction fetched events.
-	 * @param listener - The same listener function passed to onTransactionFetched
-	 */
-	offTransactionFetched(
-		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+	off<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+		event: TEvent,
+		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
 	): void;
 }

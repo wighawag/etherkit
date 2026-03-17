@@ -415,10 +415,10 @@ describe('TrackedWalletClient', () => {
 		});
 	});
 
-	describe('onTransactionBroadcasted', () => {
+	describe('on/off event subscription', () => {
 		it('should emit event when sendTransaction is called', async () => {
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -443,7 +443,7 @@ describe('TrackedWalletClient', () => {
 			expect(typeof emittedEvent.broadcastTimestampMs).toBe('number');
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 		});
 
 		it('should emit event when writeContract is called', async () => {
@@ -459,7 +459,7 @@ describe('TrackedWalletClient', () => {
 			const tokenAddress = receipt.contractAddress!;
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.writeContract({
 				address: tokenAddress,
@@ -478,7 +478,7 @@ describe('TrackedWalletClient', () => {
 			expect(emittedEvent.metadata?.title).toBe('Token Transfer Event Test');
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 		});
 
 		it('should emit event when sendRawTransaction is called', async () => {
@@ -497,7 +497,7 @@ describe('TrackedWalletClient', () => {
 			});
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -514,12 +514,12 @@ describe('TrackedWalletClient', () => {
 			expect(emittedEvent.metadata?.id).toBe('raw-event-test');
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 		});
 
-		it('should stop receiving events after offTransactionBroadcasted is called', async () => {
+		it('should stop receiving events after off is called', async () => {
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			// First transaction should trigger event
 			await trackedClient.sendTransaction({
@@ -529,7 +529,7 @@ describe('TrackedWalletClient', () => {
 			expect(listener).toHaveBeenCalledTimes(1);
 
 			// Unsubscribe
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 
 			// Second transaction should NOT trigger event
 			await trackedClient.sendTransaction({
@@ -541,7 +541,7 @@ describe('TrackedWalletClient', () => {
 
 		it('should have undefined metadata when not provided (with optional TMetadata)', async () => {
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -555,7 +555,7 @@ describe('TrackedWalletClient', () => {
 			expect(emittedEvent.metadata).toBeUndefined();
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 		});
 	});
 });
@@ -610,7 +610,7 @@ describe('TrackedWalletClient with populateMetadata', () => {
 
 		it('should auto-populate operation, functionName and args in metadata', async () => {
 			const listener = vi.fn();
-			autoPopulateClient.onTransactionBroadcasted(listener);
+			autoPopulateClient.on('transaction:broadcasted', listener);
 
 			const txHash = await autoPopulateClient.writeContract({
 				address: tokenAddress,
@@ -639,7 +639,7 @@ describe('TrackedWalletClient with populateMetadata', () => {
 			]);
 
 			// Cleanup
-			autoPopulateClient.offTransactionBroadcasted(listener);
+			autoPopulateClient.off('transaction:broadcasted', listener);
 		});
 
 		it('should throw if functionName is provided in metadata', async () => {
@@ -701,7 +701,7 @@ describe('TrackedWalletClient with populateMetadata', () => {
 
 		it('should auto-populate operation, functionName and args in metadata', async () => {
 			const listener = vi.fn();
-			autoPopulateClient.onTransactionBroadcasted(listener);
+			autoPopulateClient.on('transaction:broadcasted', listener);
 
 			const receipt = await autoPopulateClient.writeContractSync({
 				address: tokenAddress,
@@ -724,14 +724,14 @@ describe('TrackedWalletClient with populateMetadata', () => {
 			]);
 
 			// Cleanup
-			autoPopulateClient.offTransactionBroadcasted(listener);
+			autoPopulateClient.off('transaction:broadcasted', listener);
 		});
 	});
 
 	describe('sendTransaction still requires full metadata', () => {
 		it('should require full metadata for sendTransaction using unknown operation', async () => {
 			const listener = vi.fn();
-			autoPopulateClient.onTransactionBroadcasted(listener);
+			autoPopulateClient.on('transaction:broadcasted', listener);
 
 			const txHash = await autoPopulateClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -761,7 +761,7 @@ describe('TrackedWalletClient with populateMetadata', () => {
 			});
 
 			// Cleanup
-			autoPopulateClient.offTransactionBroadcasted(listener);
+			autoPopulateClient.off('transaction:broadcasted', listener);
 		});
 	});
 
@@ -809,7 +809,7 @@ describe('TrackedWalletClient with populateMetadata', () => {
 
 		it('should require extended fields but auto-populate operation, functionName and args', async () => {
 			const listener = vi.fn();
-			extendedClient.onTransactionBroadcasted(listener);
+			extendedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await extendedClient.writeContract({
 				address: tokenAddress,
@@ -838,7 +838,7 @@ describe('TrackedWalletClient with populateMetadata', () => {
 			expect(emittedEvent.metadata.priority).toBe(1);
 
 			// Cleanup
-			extendedClient.offTransactionBroadcasted(listener);
+			extendedClient.off('transaction:broadcasted', listener);
 		});
 	});
 });
@@ -877,7 +877,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 	describe('transaction:broadcasted with known=false (sendTransaction/writeContract)', () => {
 		it('should emit UnknownTrackedTransaction with known=false for sendTransaction', async () => {
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -904,7 +904,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			}
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 
 			// Wait for receipt to ensure tx is processed
 			await publicClient.waitForTransactionReceipt({hash: txHash});
@@ -912,7 +912,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 
 		it('should include intended gas params in UnknownTrackedTransaction', async () => {
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -934,7 +934,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			}
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
@@ -952,7 +952,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			const tokenAddress = receipt.contractAddress!;
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.writeContract({
 				address: tokenAddress,
@@ -977,7 +977,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			}
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
@@ -1000,7 +1000,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -1033,7 +1033,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			}
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
@@ -1055,7 +1055,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -1078,7 +1078,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			}
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
@@ -1089,8 +1089,8 @@ describe('TrackedTransaction Discriminated Union', () => {
 			const broadcastListener = vi.fn();
 			const fetchedListener = vi.fn();
 
-			trackedClient.onTransactionBroadcasted(broadcastListener);
-			trackedClient.onTransactionFetched(fetchedListener);
+			trackedClient.on('transaction:broadcasted', broadcastListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -1121,8 +1121,8 @@ describe('TrackedTransaction Discriminated Union', () => {
 			expect(fetchedEvent.txType).toBeDefined();
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(broadcastListener);
-			trackedClient.offTransactionFetched(fetchedListener);
+			trackedClient.off('transaction:broadcasted', broadcastListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
@@ -1145,8 +1145,8 @@ describe('TrackedTransaction Discriminated Union', () => {
 			const broadcastListener = vi.fn();
 			const fetchedListener = vi.fn();
 
-			trackedClient.onTransactionBroadcasted(broadcastListener);
-			trackedClient.onTransactionFetched(fetchedListener);
+			trackedClient.on('transaction:broadcasted', broadcastListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -1171,15 +1171,15 @@ describe('TrackedTransaction Discriminated Union', () => {
 			expect(broadcastEvent.hash).toBe(fetchedEvent.hash);
 
 			// Cleanup
-			trackedClient.offTransactionBroadcasted(broadcastListener);
-			trackedClient.offTransactionFetched(fetchedListener);
+			trackedClient.off('transaction:broadcasted', broadcastListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
 		it('should allow unsubscribing from transaction:fetched', async () => {
 			const fetchedListener = vi.fn();
-			trackedClient.onTransactionFetched(fetchedListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
 
 			// First transaction
 			const txHash1 = await trackedClient.sendTransaction({
@@ -1192,7 +1192,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			expect(fetchedListener).toHaveBeenCalledTimes(1);
 
 			// Unsubscribe
-			trackedClient.offTransactionFetched(fetchedListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
 
 			// Second transaction
 			const txHash2 = await trackedClient.sendTransaction({
@@ -1226,7 +1226,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -1247,7 +1247,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 				}
 			}
 
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
@@ -1276,7 +1276,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			const listener = vi.fn();
-			trackedClient.onTransactionBroadcasted(listener);
+			trackedClient.on('transaction:broadcasted', listener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -1294,7 +1294,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 				}
 			}
 
-			trackedClient.offTransactionBroadcasted(listener);
+			trackedClient.off('transaction:broadcasted', listener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 	});

@@ -806,21 +806,8 @@ export function createTrackedWalletClient<TMetadata>(
 				// Event subscription methods
 				// ============================================
 
-				onTransactionBroadcasted: (
-					listener: (event: TrackedTransaction<TMetadata>) => void,
-				) => emitter.on('transaction:broadcasted', listener),
-
-				offTransactionBroadcasted: (
-					listener: (event: TrackedTransaction<TMetadata>) => void,
-				) => emitter.off('transaction:broadcasted', listener),
-
-				onTransactionFetched: (
-					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
-				) => emitter.on('transaction:fetched', listener),
-
-				offTransactionFetched: (
-					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
-				) => emitter.off('transaction:fetched', listener),
+				on: emitter.on.bind(emitter),
+				off: emitter.off.bind(emitter),
 			};
 		},
 	};
@@ -1229,24 +1216,8 @@ function createAutoPopulateBuilder<
 				// Event subscription methods
 				// ============================================
 
-				// on: emitter.on.bind(emitter),
-				// off: emitter.off.bind(emitter),
-
-				onTransactionBroadcasted: (
-					listener: (event: TrackedTransaction<TMetadata>) => void,
-				) => emitter.on('transaction:broadcasted', listener),
-
-				offTransactionBroadcasted: (
-					listener: (event: TrackedTransaction<TMetadata>) => void,
-				) => emitter.off('transaction:broadcasted', listener),
-
-				onTransactionFetched: (
-					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
-				) => emitter.on('transaction:fetched', listener),
-
-				offTransactionFetched: (
-					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
-				) => emitter.off('transaction:fetched', listener),
+				on: emitter.on.bind(emitter),
+				off: emitter.off.bind(emitter),
 			};
 		},
 	};
