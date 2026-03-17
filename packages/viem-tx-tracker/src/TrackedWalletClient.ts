@@ -1,4 +1,5 @@
 import {
+	encodeFunctionData,
 	parseTransaction,
 	ParseTransactionReturnType,
 	recoverTransactionAddress,
@@ -299,6 +300,9 @@ function extractIntendedParamsFromSendTransaction(args: {
  * Extract intended params from writeContract args.
  */
 function extractIntendedParamsFromWriteContract(args: {
+	abi: Abi | readonly unknown[];
+	functionName: string;
+	args?: unknown;
 	address: Address;
 	value?: bigint;
 	gas?: bigint;
@@ -310,7 +314,11 @@ function extractIntendedParamsFromWriteContract(args: {
 	return {
 		to: args.address,
 		value: args.value ?? 0n,
-		// Note: data could be encoded using encodeFunctionData(args) if desired
+		data: encodeFunctionData({
+			abi: args.abi as Abi,
+			functionName: args.functionName,
+			args: args.args as readonly unknown[] | undefined,
+		}),
 		gas: args.gas,
 		gasPrice: args.gasPrice,
 		maxFeePerGas: args.maxFeePerGas,
