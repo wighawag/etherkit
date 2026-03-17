@@ -424,14 +424,14 @@ export function createTrackedWalletClient<
 >(): TrackedWalletClientBuilder<TMetadata>;
 
 // Overload 2: Auto-populate mode with default PopulatedMetadata
-export function createTrackedWalletClient(options: {
-	populateMetadata: true;
-}): TrackedWalletClientAutoPopulateBuilder<PopulatedMetadata>;
+export function createTrackedWalletClient(
+	options: CreateTrackedWalletClientOptions<true>,
+): TrackedWalletClientAutoPopulateBuilder<PopulatedMetadata>;
 
 // Overload 3: Auto-populate mode with custom metadata (must allow FunctionCallMetadata)
-export function createTrackedWalletClient<TMetadata>(options: {
-	populateMetadata: true;
-}): TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+export function createTrackedWalletClient<TMetadata>(
+	options: CreateTrackedWalletClientOptions<true>,
+): TrackedWalletClientAutoPopulateBuilder<TMetadata>;
 
 // Implementation
 export function createTrackedWalletClient<TMetadata>(
