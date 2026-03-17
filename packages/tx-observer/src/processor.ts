@@ -16,6 +16,7 @@ import type {
 	TransactionIntentsAddedEvent,
 	TransactionIntentsRemovedEvent,
 	TransactionIntentStatus,
+	TransactionObserver,
 } from './types.js';
 
 /**
@@ -171,7 +172,7 @@ export function createTransactionObserver(config: {
 	finality: number;
 	throttle?: number;
 	provider?: EIP1193ProviderWithoutEvents;
-}) {
+}): TransactionObserver {
 	const emitter = new Emitter<{
 		// Fires when any TX in the intent changes (for persistence)
 		'intent:updated': TransactionIntentEvent;

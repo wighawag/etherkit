@@ -119,3 +119,66 @@ export type DeepWritable<T> =
 				: T extends object
 					? {-readonly [K in keyof T]: DeepWritable<T[K]>}
 					: T;
+
+/**
+ * Event map for TransactionObserver event subscriptions.
+ */
+export type TransactionObserverEventMap = {
+	'intent:updated': TransactionIntentEvent;
+	'intent:status': TransactionIntentEvent;
+	'intents:added': TransactionIntentsAddedEvent;
+	'intents:removed': TransactionIntentsRemovedEvent;
+	'intents:cleared': void;
+};
+
+/**
+ * TransactionObserver is the main interface for observing transaction intents.
+ * Created via `createTransactionObserver()`.
+ */
+export type TransactionObserver = {
+	/**
+	 * Set or update the EIP-1193 provider used for blockchain queries.
+	 */
+	setProvider(provider: import('eip-1193').EIP1193Provider): void;
+
+	/**
+	 * Remove a transaction intent by its ID.
+	 */
+	remove(intentId: string): void;
+
+	/**
+	 * Clear all transaction intents.
+	 */
+	clear(): void;
+
+	/**
+	 * Add a single transaction intent.
+	 */
+	add(id: string, intent: DeepReadonly<TransactionIntent>): void;
+
+	/**
+	 * Add multiple transaction intents at once.
+	 */
+	addMultiple(intents: DeepReadonly<{[id: string]: TransactionIntent}>): void;
+
+	/**
+	 * Process all transaction intents, checking their status on-chain.
+	 */
+	process(): Promise<void>;
+
+	/**
+	 * Subscribe to an event. Returns an unsubscribe function.
+	 */
+	on<K extends keyof TransactionObserverEventMap>(
+		event: K,
+		listener: (data: TransactionObserverEventMap[K]) => void,
+	): () => void;
+
+	/**
+	 * Unsubscribe from an event.
+	 */
+	off<K extends keyof TransactionObserverEventMap>(
+		event: K,
+		listener: (data: TransactionObserverEventMap[K]) => void,
+	): void;
+};
