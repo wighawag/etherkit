@@ -1,1 +1,1 @@
-- [ ] pass a clock
+- [x] pass a clock

@@ -440,9 +440,10 @@ export function createTrackedWalletClient<TMetadata>(
 	| TrackedWalletClientBuilder<TMetadata>
 	| TrackedWalletClientAutoPopulateBuilder<TMetadata> {
 	const populateMetadata = options?.populateMetadata ?? false;
+	const clock = options?.clock ?? Date.now;
 
 	if (populateMetadata) {
-		return createAutoPopulateBuilder<TMetadata>() as TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+		return createAutoPopulateBuilder<TMetadata>(clock) as TrackedWalletClientAutoPopulateBuilder<TMetadata>;
 	}
 
 	return {
@@ -559,7 +560,7 @@ export function createTrackedWalletClient<TMetadata>(
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
 				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
-				const broadcastTimestampMs = Date.now();
+				const broadcastTimestampMs = clock();
 
 				// Extract common context
 				const {from, intendedNonce} = await extractTransactionContext(args);
@@ -603,7 +604,7 @@ export function createTrackedWalletClient<TMetadata>(
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
-				const broadcastTimestampMs = Date.now();
+				const broadcastTimestampMs = clock();
 
 				const from = await recoverTransactionAddress({serializedTransaction});
 
@@ -817,9 +818,9 @@ export function createTrackedWalletClient<TMetadata>(
  * Create an auto-populate builder for TrackedWalletClient.
  * This builder auto-populates operation, functionName and args in writeContract metadata.
  */
-function createAutoPopulateBuilder<
-	TMetadata,
->(): TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+function createAutoPopulateBuilder<TMetadata>(
+	clock: () => number,
+): TrackedWalletClientAutoPopulateBuilder<TMetadata> {
 	return {
 		using<TClient extends WalletClient>(
 			walletClient: TClient,
@@ -949,7 +950,7 @@ function createAutoPopulateBuilder<
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
 				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
-				const broadcastTimestampMs = Date.now();
+				const broadcastTimestampMs = clock();
 
 				const {from, intendedNonce} = await extractTransactionContext(args);
 
@@ -991,7 +992,7 @@ function createAutoPopulateBuilder<
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
-				const broadcastTimestampMs = Date.now();
+				const broadcastTimestampMs = clock();
 
 				const from = await recoverTransactionAddress({serializedTransaction});
 				const parsedTx = parseTransaction(serializedTransaction);

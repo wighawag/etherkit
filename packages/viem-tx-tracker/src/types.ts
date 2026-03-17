@@ -60,6 +60,11 @@ export interface CreateTrackedWalletClientOptions<
 	 * (e.g., PopulatedMetadata, FunctionCallMetadata, or a union including FunctionCallMetadata).
 	 */
 	populateMetadata?: TPopulate;
+	/**
+	 * A clock function that returns the current time in milliseconds.
+	 * Defaults to Date.now.
+	 */
+	clock?: () => number;
 }
 
 /**
