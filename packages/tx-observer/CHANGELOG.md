@@ -1,5 +1,11 @@
 # @etherkit/tx-observer
 
+## 0.0.8
+
+### Patch Changes
+
+- type TransactionObserver
+
 ## 0.0.7
 
 ### Patch Changes
