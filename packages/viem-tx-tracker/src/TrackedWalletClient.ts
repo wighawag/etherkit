@@ -443,7 +443,9 @@ export function createTrackedWalletClient<TMetadata>(
 	const clock = options?.clock ?? Date.now;
 
 	if (populateMetadata) {
-		return createAutoPopulateBuilder<TMetadata>(clock) as TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+		return createAutoPopulateBuilder<TMetadata>(
+			clock,
+		) as TrackedWalletClientAutoPopulateBuilder<TMetadata>;
 	}
 
 	return {

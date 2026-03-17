@@ -1,5 +1,11 @@
 # @etherkit/viem-tx-tracker
 
+## 0.0.6
+
+### Patch Changes
+
+- support unknown and known tx
+
 ## 0.0.5
 
 ### Patch Changes

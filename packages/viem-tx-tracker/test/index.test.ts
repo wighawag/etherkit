@@ -1018,7 +1018,9 @@ describe('TrackedTransaction Discriminated Union', () => {
 			if (emittedEvent.known) {
 				// TypeScript knows this is KnownTrackedTransaction
 				expect(emittedEvent.hash).toBe(txHash);
-				expect(emittedEvent.to?.toLowerCase()).toBe(RECIPIENT_ADDRESS.toLowerCase());
+				expect(emittedEvent.to?.toLowerCase()).toBe(
+					RECIPIENT_ADDRESS.toLowerCase(),
+				);
 				expect(emittedEvent.value).toBe(parseEther('0.01'));
 				expect(emittedEvent.gas).toBe(21000n);
 				expect(emittedEvent.nonce).toBe(nonce);
@@ -1067,7 +1069,9 @@ describe('TrackedTransaction Discriminated Union', () => {
 			expect(emittedEvent.known).toBe(true);
 			if (emittedEvent.known) {
 				expect(emittedEvent.hash).toBe(txHash);
-				expect(emittedEvent.to?.toLowerCase()).toBe(RECIPIENT_ADDRESS.toLowerCase());
+				expect(emittedEvent.to?.toLowerCase()).toBe(
+					RECIPIENT_ADDRESS.toLowerCase(),
+				);
 				expect(emittedEvent.value).toBe(parseEther('0.05'));
 				expect(emittedEvent.data).toBe('0x1234');
 				expect(emittedEvent.gas).toBe(30000n);
