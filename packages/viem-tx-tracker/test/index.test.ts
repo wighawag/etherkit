@@ -927,10 +927,14 @@ describe('TrackedTransaction Discriminated Union', () => {
 			expect(emittedEvent.known).toBe(false);
 			if (!emittedEvent.known) {
 				expect(emittedEvent.txType).toBe('eip1559');
-				expect(emittedEvent.maxFeePerGas).toBe(parseEther('0.000000002'));
-				expect(emittedEvent.maxPriorityFeePerGas).toBe(
-					parseEther('0.000000001'),
-				);
+				if (emittedEvent.txType === 'eip1559') {
+					expect(emittedEvent.gasParameters.maxFeePerGas).toBe(
+						parseEther('0.000000002'),
+					);
+					expect(emittedEvent.gasParameters.maxPriorityFeePerGas).toBe(
+						parseEther('0.000000001'),
+					);
+				}
 			}
 
 			// Cleanup
@@ -1022,13 +1026,15 @@ describe('TrackedTransaction Discriminated Union', () => {
 					RECIPIENT_ADDRESS.toLowerCase(),
 				);
 				expect(emittedEvent.value).toBe(parseEther('0.01'));
-				expect(emittedEvent.gas).toBe(21000n);
+				expect(emittedEvent.gasParameters.gas).toBe(21000n);
 				expect(emittedEvent.nonce).toBe(nonce);
 				expect(emittedEvent.metadata?.id).toBe('known-tx-test');
 				expect(emittedEvent.txType).toBe('eip1559');
 				if (emittedEvent.txType === 'eip1559') {
-					expect(emittedEvent.maxFeePerGas).toBe(parseEther('0.000000002'));
-					expect(emittedEvent.maxPriorityFeePerGas).toBe(
+					expect(emittedEvent.gasParameters.maxFeePerGas).toBe(
+						parseEther('0.000000002'),
+					);
+					expect(emittedEvent.gasParameters.maxPriorityFeePerGas).toBe(
 						parseEther('0.000000001'),
 					);
 				}
@@ -1074,7 +1080,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 				);
 				expect(emittedEvent.value).toBe(parseEther('0.05'));
 				expect(emittedEvent.data).toBe('0x1234');
-				expect(emittedEvent.gas).toBe(30000n);
+				expect(emittedEvent.gasParameters.gas).toBe(30000n);
 				expect(emittedEvent.nonce).toBe(nonce);
 				expect(emittedEvent.from.toLowerCase()).toBe(
 					account.address.toLowerCase(),
@@ -1120,7 +1126,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			expect(fetchedEvent.known).toBe(true);
 			expect(fetchedEvent.hash).toBe(txHash);
 			expect(fetchedEvent.metadata?.id).toBe('fetched-event-test');
-			expect(typeof fetchedEvent.gas).toBe('bigint');
+			expect(typeof fetchedEvent.gasParameters.gas).toBe('bigint');
 			expect(typeof fetchedEvent.nonce).toBe('number');
 			expect(fetchedEvent.txType).toBeDefined();
 
@@ -1246,8 +1252,10 @@ describe('TrackedTransaction Discriminated Union', () => {
 				// Type narrowing on txType
 				if (emittedEvent.txType === 'eip1559') {
 					// TypeScript knows maxFeePerGas and maxPriorityFeePerGas exist
-					expect(typeof emittedEvent.maxFeePerGas).toBe('bigint');
-					expect(typeof emittedEvent.maxPriorityFeePerGas).toBe('bigint');
+					expect(typeof emittedEvent.gasParameters.maxFeePerGas).toBe('bigint');
+					expect(typeof emittedEvent.gasParameters.maxPriorityFeePerGas).toBe(
+						'bigint',
+					);
 				}
 			}
 

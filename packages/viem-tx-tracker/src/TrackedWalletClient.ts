@@ -22,6 +22,7 @@ import type {
 	AccessList,
 	BlockTag,
 	CreateTrackedWalletClientOptions,
+	IntendedGasParameters,
 	KnownTrackedTransaction,
 	NonceOption,
 	PopulatedMetadata,
@@ -78,14 +79,12 @@ interface TransactionContext {
  * These are the intended values - wallet may modify them.
  */
 interface IntendedTransactionParams {
-	to?: Address | null;
-	value?: bigint;
-	data?: `0x${string}`;
-	gas?: bigint;
-	gasPrice?: bigint;
-	maxFeePerGas?: bigint;
-	maxPriorityFeePerGas?: bigint;
+	to: Address | null;
+	value: bigint;
+	data: `0x${string}`;
+	txType?: 'eip1559' | 'legacy' | 'eip2930';
 	accessList?: AccessList;
+	gasParameters: IntendedGasParameters;
 }
 
 /**
@@ -95,13 +94,16 @@ interface IntendedTransactionParams {
 function inferTxType(
 	params: IntendedTransactionParams,
 ): 'eip1559' | 'legacy' | 'eip2930' | undefined {
-	if (params.maxFeePerGas !== undefined) {
+	if (params.gasParameters.maxFeePerGas !== undefined) {
 		return 'eip1559';
 	}
-	if (params.gasPrice !== undefined && params.accessList !== undefined) {
+	if (
+		params.gasParameters.gasPrice !== undefined &&
+		params.accessList !== undefined
+	) {
 		return 'eip2930';
 	}
-	if (params.gasPrice !== undefined) {
+	if (params.gasParameters.gasPrice !== undefined) {
 		return 'legacy';
 	}
 	return undefined; // Wallet will determine
@@ -114,65 +116,131 @@ function inferTxType(
 function createUnknownTrackedTransaction<TMetadata>(
 	hash: Hash,
 	from: Address,
-	nonce: number | undefined,
+	nonce: number,
 	chainId: number | undefined,
 	metadata: TMetadata,
 	broadcastTimestampMs: number,
 	params: IntendedTransactionParams,
 ): UnknownTrackedTransaction<TMetadata> {
-	const txType = inferTxType(params);
-	return {
-		known: false,
+	const base = {
+		known: false as const,
 		chainId,
 		hash,
 		from,
 		nonce,
 		broadcastTimestampMs,
 		metadata,
-		...(txType !== undefined && {txType}),
-		...(params.to !== undefined && {to: params.to}),
-		...(params.value !== undefined && {value: params.value}),
-		...(params.data !== undefined && {data: params.data}),
-		...(params.gas !== undefined && {gas: params.gas}),
-		...(params.gasPrice !== undefined && {gasPrice: params.gasPrice}),
-		...(params.maxFeePerGas !== undefined && {
-			maxFeePerGas: params.maxFeePerGas,
-		}),
-		...(params.maxPriorityFeePerGas !== undefined && {
-			maxPriorityFeePerGas: params.maxPriorityFeePerGas,
-		}),
-		...(params.accessList !== undefined && {accessList: params.accessList}),
+		to: params.to,
+		value: params.value,
+		data: params.data,
 	};
+
+	// Use provided txType or infer from params
+	const txType = params.txType ?? inferTxType(params);
+
+	// Discriminate by txType
+	if (txType === 'eip1559') {
+		return {
+			...base,
+			txType: 'eip1559',
+			accessList: params.accessList,
+			gasParameters: {
+				gas: params.gasParameters.gas,
+				maxFeePerGas: params.gasParameters.maxFeePerGas,
+				maxPriorityFeePerGas: params.gasParameters.maxPriorityFeePerGas,
+			},
+		};
+	} else if (txType === 'legacy') {
+		return {
+			...base,
+			txType: 'legacy',
+			gasParameters: {
+				gas: params.gasParameters.gas,
+				gasPrice: params.gasParameters.gasPrice,
+			},
+		};
+	} else if (txType === 'eip2930') {
+		return {
+			...base,
+			txType: 'eip2930',
+			accessList: params.accessList,
+			gasParameters: {
+				gas: params.gasParameters.gas,
+				gasPrice: params.gasParameters.gasPrice,
+			},
+		};
+	} else {
+		// txType unknown
+		return {
+			...base,
+			accessList: params.accessList,
+			gasParameters: params.gasParameters,
+		};
+	}
 }
 
 /**
  * Extract transaction type-specific fields from a fetched transaction.
+ * Returns the txType, accessList (if applicable), and gasParameters object.
  */
-function extractTransactionTypeFields(tx: Transaction): {
-	txType: 'eip1559' | 'legacy' | 'eip2930';
-	gasPrice?: bigint;
-	maxFeePerGas?: bigint;
-	maxPriorityFeePerGas?: bigint;
-	accessList?: AccessList;
-} {
+function extractTransactionTypeFields(tx: Transaction):
+	| {
+			txType: 'eip1559';
+			chainId: number;
+			accessList?: AccessList;
+			gasParameters: {
+				gas: bigint;
+				maxFeePerGas: bigint;
+				maxPriorityFeePerGas: bigint;
+			};
+	  }
+	| {
+			txType: 'legacy';
+			chainId?: number;
+			gasParameters: {
+				gas: bigint;
+				gasPrice: bigint;
+			};
+	  }
+	| {
+			txType: 'eip2930';
+			chainId: number;
+			accessList: AccessList;
+			gasParameters: {
+				gas: bigint;
+				gasPrice: bigint;
+			};
+	  } {
 	if (tx.type === 'eip1559') {
 		return {
 			txType: 'eip1559',
-			maxFeePerGas: tx.maxFeePerGas!,
-			maxPriorityFeePerGas: tx.maxPriorityFeePerGas!,
+			chainId: tx.chainId!,
 			...(tx.accessList && {accessList: tx.accessList as AccessList}),
+			gasParameters: {
+				gas: tx.gas,
+				maxFeePerGas: tx.maxFeePerGas!,
+				maxPriorityFeePerGas: tx.maxPriorityFeePerGas!,
+			},
 		};
 	} else if (tx.type === 'eip2930') {
 		return {
 			txType: 'eip2930',
-			gasPrice: tx.gasPrice!,
+			chainId: tx.chainId!,
 			accessList: (tx.accessList ?? []) as AccessList,
+			gasParameters: {
+				gas: tx.gas,
+				gasPrice: tx.gasPrice!,
+			},
 		};
 	} else {
 		// Legacy or unknown - treat as legacy
 		return {
 			txType: 'legacy',
-			gasPrice: tx.gasPrice!,
+			chainId: tx.chainId,
+			gasParameters: {
+				gas: tx.gas,
+				gasPrice: tx.gasPrice!,
+			},
 		};
 	}
 }
@@ -185,20 +253,22 @@ function createKnownTrackedTransaction<TMetadata>(
 	metadata: TMetadata,
 	broadcastTimestampMs: number,
 ): KnownTrackedTransaction<TMetadata> {
-	const typeFields = extractTransactionTypeFields(tx);
-
-	return {
-		known: true,
-		chainId: tx.chainId!,
+	const base = {
+		known: true as const,
 		hash: tx.hash,
 		from: tx.from,
 		to: tx.to,
 		nonce: tx.nonce,
 		value: tx.value,
 		data: tx.input,
-		gas: tx.gas,
 		broadcastTimestampMs,
 		metadata,
+	};
+
+	const typeFields = extractTransactionTypeFields(tx);
+
+	return {
+		...base,
 		...typeFields,
 	} as KnownTrackedTransaction<TMetadata>;
 }
@@ -214,52 +284,56 @@ function createKnownTrackedTransactionFromRaw<TMetadata>(
 	chainId: number | undefined,
 	broadcastTimestampMs: number,
 ): KnownTrackedTransaction<TMetadata> {
-	// Determine transaction type from parsed tx
-	let typeFields: {
-		txType: 'eip1559' | 'legacy' | 'eip2930';
-		gasPrice?: bigint;
-		maxFeePerGas?: bigint;
-		maxPriorityFeePerGas?: bigint;
-		accessList?: AccessList;
-	};
-
-	if ('maxFeePerGas' in parsedTx && parsedTx.maxFeePerGas !== undefined) {
-		typeFields = {
-			txType: 'eip1559',
-			maxFeePerGas: parsedTx.maxFeePerGas,
-			maxPriorityFeePerGas: parsedTx.maxPriorityFeePerGas!,
-			...('accessList' in parsedTx &&
-				parsedTx.accessList && {
-					accessList: parsedTx.accessList as AccessList,
-				}),
-		};
-	} else if ('accessList' in parsedTx && parsedTx.accessList) {
-		typeFields = {
-			txType: 'eip2930',
-			gasPrice: parsedTx.gasPrice!,
-			accessList: parsedTx.accessList as AccessList,
-		};
-	} else {
-		typeFields = {
-			txType: 'legacy',
-			gasPrice: parsedTx.gasPrice!,
-		};
-	}
-
-	return {
-		known: true,
-		chainId: parsedTx.chainId ?? chainId!,
+	const base = {
+		known: true as const,
 		hash,
 		from,
 		to: parsedTx.to ?? null,
 		nonce: parsedTx.nonce!,
 		value: parsedTx.value ?? 0n,
 		data: parsedTx.data ?? '0x',
-		gas: parsedTx.gas!,
 		broadcastTimestampMs,
 		metadata,
-		...typeFields,
-	} as KnownTrackedTransaction<TMetadata>;
+	};
+
+	// Determine transaction type from parsed tx
+	if ('maxFeePerGas' in parsedTx && parsedTx.maxFeePerGas !== undefined) {
+		return {
+			...base,
+			txType: 'eip1559',
+			chainId: parsedTx.chainId ?? chainId!,
+			...('accessList' in parsedTx &&
+				parsedTx.accessList && {
+					accessList: parsedTx.accessList as AccessList,
+				}),
+			gasParameters: {
+				gas: parsedTx.gas!,
+				maxFeePerGas: parsedTx.maxFeePerGas,
+				maxPriorityFeePerGas: parsedTx.maxPriorityFeePerGas!,
+			},
+		};
+	} else if ('accessList' in parsedTx && parsedTx.accessList) {
+		return {
+			...base,
+			txType: 'eip2930',
+			chainId: parsedTx.chainId ?? chainId!,
+			accessList: parsedTx.accessList as AccessList,
+			gasParameters: {
+				gas: parsedTx.gas!,
+				gasPrice: parsedTx.gasPrice!,
+			},
+		};
+	} else {
+		return {
+			...base,
+			txType: 'legacy',
+			chainId: parsedTx.chainId ?? chainId,
+			gasParameters: {
+				gas: parsedTx.gas!,
+				gasPrice: parsedTx.gasPrice!,
+			},
+		};
+	}
 }
 
 /**
@@ -276,23 +350,25 @@ function extractIntendedParamsFromSendTransaction(args: {
 	maxPriorityFeePerGas?: bigint;
 	accessList?: AccessList;
 }): IntendedTransactionParams {
-	// Normalize 'to' to either a hex address, null, or undefined
+	// Normalize 'to' to either a hex address or null
 	const to =
 		args.to === null || args.to === undefined
-			? (args.to as null | undefined)
+			? null
 			: typeof args.to === 'string'
 				? (args.to as Address)
-				: undefined;
+				: null;
 
 	return {
 		to,
 		value: args.value ?? 0n,
-		data: args.data,
-		gas: args.gas,
-		gasPrice: args.gasPrice,
-		maxFeePerGas: args.maxFeePerGas,
-		maxPriorityFeePerGas: args.maxPriorityFeePerGas,
+		data: args.data ?? '0x',
 		accessList: args.accessList,
+		gasParameters: {
+			gas: args.gas,
+			gasPrice: args.gasPrice,
+			maxFeePerGas: args.maxFeePerGas,
+			maxPriorityFeePerGas: args.maxPriorityFeePerGas,
+		},
 	};
 }
 
@@ -319,11 +395,13 @@ function extractIntendedParamsFromWriteContract(args: {
 			functionName: args.functionName,
 			args: args.args as readonly unknown[] | undefined,
 		}),
-		gas: args.gas,
-		gasPrice: args.gasPrice,
-		maxFeePerGas: args.maxFeePerGas,
-		maxPriorityFeePerGas: args.maxPriorityFeePerGas,
 		accessList: args.accessList,
+		gasParameters: {
+			gas: args.gas,
+			gasPrice: args.gasPrice,
+			maxFeePerGas: args.maxFeePerGas,
+			maxPriorityFeePerGas: args.maxPriorityFeePerGas,
+		},
 	};
 }
 

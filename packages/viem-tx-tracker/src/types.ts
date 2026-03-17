@@ -98,14 +98,30 @@ export type AccessList = readonly {
 }[];
 
 /**
- * Base transaction fields present in all tracked transactions.
+ * Gas parameters for UnknownTrackedTransaction.
+ * All fields are optional - we provide what we have,
+ * but the wallet may modify or fill in missing values.
  */
-export type BaseTrackedTransaction<TMetadata> = {
-	readonly chainId?: number;
+export type IntendedGasParameters = {
+	readonly gas?: bigint;
+	readonly gasPrice?: bigint;
+	readonly maxFeePerGas?: bigint;
+	readonly maxPriorityFeePerGas?: bigint;
+};
+
+/**
+ * Common fields for all tracked transactions.
+ * All field paths are stable - you can always access tx.field
+ */
+type CommonTrackedFields<TMetadata> = {
 	readonly hash: `0x${string}`;
 	readonly from: `0x${string}`;
 	readonly broadcastTimestampMs: number;
 	readonly metadata: TMetadata;
+	readonly to: `0x${string}` | null;
+	readonly value: bigint;
+	readonly data: `0x${string}`;
+	readonly nonce: number;
 };
 
 /**
@@ -114,33 +130,42 @@ export type BaseTrackedTransaction<TMetadata> = {
  * or immediately for sendRawTransaction where we can parse the tx.
  *
  * When known=true, all values are the actual confirmed values used by the chain.
+ * Uses discriminated union by txType to enforce correct field combinations.
+ * - txType at top level (stable path)
+ * - accessList at top level, presence depends on txType
+ * - gasParameters at top level with txType-specific fields
  */
 export type KnownTrackedTransaction<TMetadata> =
-	BaseTrackedTransaction<TMetadata> & {
+	CommonTrackedFields<TMetadata> & {
 		readonly known: true;
-		readonly to: `0x${string}` | null;
-		readonly nonce: number;
-		readonly value: bigint;
-		readonly data: `0x${string}`;
-		readonly gas: bigint;
 	} & (
 			| {
 					readonly txType: 'eip1559';
-					readonly chainId: number; // Required for EIP-1559
-					readonly maxFeePerGas: bigint;
-					readonly maxPriorityFeePerGas: bigint;
-					readonly accessList?: AccessList; // EIP-1559 can also have access lists
+					readonly chainId: number;
+					readonly accessList?: AccessList;
+					readonly gasParameters: {
+						readonly gas: bigint;
+						readonly maxFeePerGas: bigint;
+						readonly maxPriorityFeePerGas: bigint;
+					};
 			  }
 			| {
 					readonly txType: 'legacy';
-					readonly chainId?: number; // Optional for legacy (pre-EIP-155 txs don't have it)
-					readonly gasPrice: bigint;
+					readonly chainId?: number;
+					// accessList not available for legacy
+					readonly gasParameters: {
+						readonly gas: bigint;
+						readonly gasPrice: bigint;
+					};
 			  }
 			| {
 					readonly txType: 'eip2930';
-					readonly chainId: number; // Required for EIP-2930
-					readonly gasPrice: bigint;
-					readonly accessList: AccessList; // Required for EIP-2930
+					readonly chainId: number;
+					readonly accessList: AccessList;
+					readonly gasParameters: {
+						readonly gas: bigint;
+						readonly gasPrice: bigint;
+					};
 			  }
 		);
 
@@ -150,7 +175,8 @@ export type KnownTrackedTransaction<TMetadata> =
  *
  * When known=false, values are what we intended/provided, but the wallet
  * may have modified them (e.g., gas estimation, nonce override).
- * All optional fields are populated if we have the data.
+ * Also discriminated by txType when known.
+ * gasParameters may differ from what wallet actually uses.
  *
  * txType is inferred from provided params:
  * - maxFeePerGas provided → 'eip1559'
@@ -159,19 +185,48 @@ export type KnownTrackedTransaction<TMetadata> =
  * - undefined → wallet will determine type
  */
 export type UnknownTrackedTransaction<TMetadata> =
-	BaseTrackedTransaction<TMetadata> & {
+	CommonTrackedFields<TMetadata> & {
 		readonly known: false;
-		readonly txType?: 'eip1559' | 'legacy' | 'eip2930'; // Inferred from params if possible
-		readonly to?: `0x${string}` | null;
-		readonly nonce?: number;
-		readonly value?: bigint;
-		readonly data?: `0x${string}`;
-		readonly gas?: bigint;
-		readonly gasPrice?: bigint;
-		readonly maxFeePerGas?: bigint;
-		readonly maxPriorityFeePerGas?: bigint;
-		readonly accessList?: AccessList;
-	};
+	} & (
+			| {
+					// txType inferred as eip1559
+					readonly txType: 'eip1559';
+					readonly chainId?: number;
+					readonly accessList?: AccessList;
+					readonly gasParameters: {
+						readonly gas?: bigint;
+						readonly maxFeePerGas?: bigint;
+						readonly maxPriorityFeePerGas?: bigint;
+					};
+			  }
+			| {
+					// txType inferred as legacy
+					readonly txType: 'legacy';
+					readonly chainId?: number;
+					// no accessList for legacy
+					readonly gasParameters: {
+						readonly gas?: bigint;
+						readonly gasPrice?: bigint;
+					};
+			  }
+			| {
+					// txType inferred as eip2930
+					readonly txType: 'eip2930';
+					readonly chainId?: number;
+					readonly accessList?: AccessList;
+					readonly gasParameters: {
+						readonly gas?: bigint;
+						readonly gasPrice?: bigint;
+					};
+			  }
+			| {
+					// txType unknown - wallet will decide
+					readonly txType?: undefined;
+					readonly chainId?: number;
+					readonly accessList?: AccessList;
+					readonly gasParameters: IntendedGasParameters;
+			  }
+		);
 
 /**
  * A tracked transaction - discriminated by 'known' field.
