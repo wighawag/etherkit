@@ -712,3 +712,51 @@ export interface TrackedWalletClientAutoPopulate<
 		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
 	): void;
 }
+
+/**
+	* Utility type to get the return type of createTrackedWalletClient().using().
+	*
+	* Use this type to declare variables that will hold a TrackedWalletClient
+	* without having to manually specify all the type parameters.
+	*
+	* @typeParam TMetadata - The metadata type for transaction tracking
+	* @typeParam TAutoPopulate - Whether auto-population is enabled (default: false)
+	* @typeParam TTransport - The transport type (default: Transport)
+	* @typeParam TChain - The chain type (default: Chain | undefined)
+	* @typeParam TAccount - The account type (default: Account | undefined)
+	*
+	* @example
+	* ```typescript
+	* // Standard mode with required metadata
+	* type MyClient = TrackedWalletClientType<{purpose: string}>;
+	* let client: MyClient;
+	*
+	* // Standard mode with optional metadata
+	* type MyOptionalClient = TrackedWalletClientType<{purpose: string} | undefined>;
+	*
+	* // Auto-populate mode with default PopulatedMetadata
+	* type MyAutoClient = TrackedWalletClientType<PopulatedMetadata, true>;
+	*
+	* // Auto-populate mode with extended metadata
+	* type MyExtendedMetadata = FunctionCallMetadata & { priority: number };
+	* type MyExtendedClient = TrackedWalletClientType<MyExtendedMetadata, true>;
+	*
+	* // With specific wallet client types
+	* type MySpecificClient = TrackedWalletClientType<
+	*   {purpose: string},
+	*   false,
+	*   HttpTransport,
+	*   typeof mainnet,
+	*   PrivateKeyAccount
+	* >;
+	* ```
+	*/
+export type TrackedWalletClientType<
+	TMetadata,
+	TAutoPopulate extends boolean = false,
+	TTransport extends Transport = Transport,
+	TChain extends Chain | undefined = Chain | undefined,
+	TAccount extends Account | undefined = Account | undefined,
+> = TAutoPopulate extends true
+	? TrackedWalletClientAutoPopulate<TMetadata, TTransport, TChain, TAccount>
+	: TrackedWalletClient<TMetadata, TTransport, TChain, TAccount>;
