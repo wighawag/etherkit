@@ -1,5 +1,6 @@
 import {
 	parseTransaction,
+	ParseTransactionReturnType,
 	recoverTransactionAddress,
 	type Abi,
 	type Account,
@@ -9,6 +10,7 @@ import {
 	type ContractFunctionName,
 	type Hash,
 	type PublicClient,
+	type Transaction,
 	type TransactionReceipt,
 	type TransactionSerialized,
 	type Transport,
@@ -16,8 +18,10 @@ import {
 } from 'viem';
 import {Emitter} from 'radiate';
 import type {
+	AccessList,
 	BlockTag,
 	CreateTrackedWalletClientOptions,
+	KnownTrackedTransaction,
 	NonceOption,
 	PopulatedMetadata,
 	TrackedRawTransactionParameters,
@@ -27,6 +31,7 @@ import type {
 	TrackedWalletClientAutoPopulate,
 	TrackedWriteContractAutoPopulateParameters,
 	TrackedWriteContractParameters,
+	UnknownTrackedTransaction,
 } from './types.js';
 
 /**
@@ -60,18 +65,258 @@ function normalizeAccount(
 }
 
 /**
- * Generate a unique tracking ID if not provided in metadata
- */
-function generateTrackingId(): string {
-	return crypto.randomUUID();
-}
-
-/**
  * Context for transaction tracking - common data extracted from request
  */
 interface TransactionContext {
 	from: Address;
 	intendedNonce: number;
+}
+
+/**
+ * Parameters we can extract from writeContract/sendTransaction calls.
+ * These are the intended values - wallet may modify them.
+ */
+interface IntendedTransactionParams {
+	to?: Address | null;
+	value?: bigint;
+	data?: `0x${string}`;
+	gas?: bigint;
+	gasPrice?: bigint;
+	maxFeePerGas?: bigint;
+	maxPriorityFeePerGas?: bigint;
+	accessList?: AccessList;
+}
+
+/**
+ * Infer transaction type from provided params.
+ * Returns undefined if can't be determined (wallet will decide).
+ */
+function inferTxType(
+	params: IntendedTransactionParams,
+): 'eip1559' | 'legacy' | 'eip2930' | undefined {
+	if (params.maxFeePerGas !== undefined) {
+		return 'eip1559';
+	}
+	if (params.gasPrice !== undefined && params.accessList !== undefined) {
+		return 'eip2930';
+	}
+	if (params.gasPrice !== undefined) {
+		return 'legacy';
+	}
+	return undefined; // Wallet will determine
+}
+
+/**
+ * Create an UnknownTrackedTransaction for immediate emission.
+ * Populates all known intended values from the transaction parameters.
+ */
+function createUnknownTrackedTransaction<TMetadata>(
+	hash: Hash,
+	from: Address,
+	nonce: number | undefined,
+	chainId: number | undefined,
+	metadata: TMetadata,
+	broadcastTimestampMs: number,
+	params: IntendedTransactionParams,
+): UnknownTrackedTransaction<TMetadata> {
+	const txType = inferTxType(params);
+	return {
+		known: false,
+		chainId,
+		hash,
+		from,
+		nonce,
+		broadcastTimestampMs,
+		metadata,
+		...(txType !== undefined && {txType}),
+		...(params.to !== undefined && {to: params.to}),
+		...(params.value !== undefined && {value: params.value}),
+		...(params.data !== undefined && {data: params.data}),
+		...(params.gas !== undefined && {gas: params.gas}),
+		...(params.gasPrice !== undefined && {gasPrice: params.gasPrice}),
+		...(params.maxFeePerGas !== undefined && {
+			maxFeePerGas: params.maxFeePerGas,
+		}),
+		...(params.maxPriorityFeePerGas !== undefined && {
+			maxPriorityFeePerGas: params.maxPriorityFeePerGas,
+		}),
+		...(params.accessList !== undefined && {accessList: params.accessList}),
+	};
+}
+
+/**
+ * Extract transaction type-specific fields from a fetched transaction.
+ */
+function extractTransactionTypeFields(tx: Transaction): {
+	txType: 'eip1559' | 'legacy' | 'eip2930';
+	gasPrice?: bigint;
+	maxFeePerGas?: bigint;
+	maxPriorityFeePerGas?: bigint;
+	accessList?: AccessList;
+} {
+	if (tx.type === 'eip1559') {
+		return {
+			txType: 'eip1559',
+			maxFeePerGas: tx.maxFeePerGas!,
+			maxPriorityFeePerGas: tx.maxPriorityFeePerGas!,
+			...(tx.accessList && {accessList: tx.accessList as AccessList}),
+		};
+	} else if (tx.type === 'eip2930') {
+		return {
+			txType: 'eip2930',
+			gasPrice: tx.gasPrice!,
+			accessList: (tx.accessList ?? []) as AccessList,
+		};
+	} else {
+		// Legacy or unknown - treat as legacy
+		return {
+			txType: 'legacy',
+			gasPrice: tx.gasPrice!,
+		};
+	}
+}
+
+/**
+ * Create a KnownTrackedTransaction from a fetched transaction.
+ */
+function createKnownTrackedTransaction<TMetadata>(
+	tx: Transaction,
+	metadata: TMetadata,
+	broadcastTimestampMs: number,
+): KnownTrackedTransaction<TMetadata> {
+	const typeFields = extractTransactionTypeFields(tx);
+
+	return {
+		known: true,
+		chainId: tx.chainId!,
+		hash: tx.hash,
+		from: tx.from,
+		to: tx.to,
+		nonce: tx.nonce,
+		value: tx.value,
+		data: tx.input,
+		gas: tx.gas,
+		broadcastTimestampMs,
+		metadata,
+		...typeFields,
+	} as KnownTrackedTransaction<TMetadata>;
+}
+
+/**
+ * Create a KnownTrackedTransaction from a parsed raw transaction.
+ */
+function createKnownTrackedTransactionFromRaw<TMetadata>(
+	parsedTx: ParseTransactionReturnType<`0x${string}`>,
+	from: `0x${string}`,
+	hash: Hash,
+	metadata: TMetadata,
+	chainId: number | undefined,
+	broadcastTimestampMs: number,
+): KnownTrackedTransaction<TMetadata> {
+	// Determine transaction type from parsed tx
+	let typeFields: {
+		txType: 'eip1559' | 'legacy' | 'eip2930';
+		gasPrice?: bigint;
+		maxFeePerGas?: bigint;
+		maxPriorityFeePerGas?: bigint;
+		accessList?: AccessList;
+	};
+
+	if ('maxFeePerGas' in parsedTx && parsedTx.maxFeePerGas !== undefined) {
+		typeFields = {
+			txType: 'eip1559',
+			maxFeePerGas: parsedTx.maxFeePerGas,
+			maxPriorityFeePerGas: parsedTx.maxPriorityFeePerGas!,
+			...('accessList' in parsedTx &&
+				parsedTx.accessList && {
+					accessList: parsedTx.accessList as AccessList,
+				}),
+		};
+	} else if ('accessList' in parsedTx && parsedTx.accessList) {
+		typeFields = {
+			txType: 'eip2930',
+			gasPrice: parsedTx.gasPrice!,
+			accessList: parsedTx.accessList as AccessList,
+		};
+	} else {
+		typeFields = {
+			txType: 'legacy',
+			gasPrice: parsedTx.gasPrice!,
+		};
+	}
+
+	return {
+		known: true,
+		chainId: parsedTx.chainId ?? chainId!,
+		hash,
+		from,
+		to: parsedTx.to ?? null,
+		nonce: parsedTx.nonce!,
+		value: parsedTx.value ?? 0n,
+		data: parsedTx.data ?? '0x',
+		gas: parsedTx.gas!,
+		broadcastTimestampMs,
+		metadata,
+		...typeFields,
+	} as KnownTrackedTransaction<TMetadata>;
+}
+
+/**
+ * Extract intended params from sendTransaction args.
+ * Uses 'unknown' for 'to' since viem's SendTransactionParameters has a complex type for it.
+ */
+function extractIntendedParamsFromSendTransaction(args: {
+	to?: unknown;
+	value?: bigint;
+	data?: `0x${string}`;
+	gas?: bigint;
+	gasPrice?: bigint;
+	maxFeePerGas?: bigint;
+	maxPriorityFeePerGas?: bigint;
+	accessList?: AccessList;
+}): IntendedTransactionParams {
+	// Normalize 'to' to either a hex address, null, or undefined
+	const to =
+		args.to === null || args.to === undefined
+			? (args.to as null | undefined)
+			: typeof args.to === 'string'
+				? (args.to as Address)
+				: undefined;
+
+	return {
+		to,
+		value: args.value ?? 0n,
+		data: args.data,
+		gas: args.gas,
+		gasPrice: args.gasPrice,
+		maxFeePerGas: args.maxFeePerGas,
+		maxPriorityFeePerGas: args.maxPriorityFeePerGas,
+		accessList: args.accessList,
+	};
+}
+
+/**
+ * Extract intended params from writeContract args.
+ */
+function extractIntendedParamsFromWriteContract(args: {
+	address: Address;
+	value?: bigint;
+	gas?: bigint;
+	gasPrice?: bigint;
+	maxFeePerGas?: bigint;
+	maxPriorityFeePerGas?: bigint;
+	accessList?: AccessList;
+}): IntendedTransactionParams {
+	return {
+		to: args.address,
+		value: args.value ?? 0n,
+		// Note: data could be encoded using encodeFunctionData(args) if desired
+		gas: args.gas,
+		gasPrice: args.gasPrice,
+		maxFeePerGas: args.maxFeePerGas,
+		maxPriorityFeePerGas: args.maxPriorityFeePerGas,
+		accessList: args.accessList,
+	};
 }
 
 /**
@@ -215,9 +460,10 @@ export function createTrackedWalletClient<TMetadata>(
 			type TChain = InferChain<TClient>;
 			type TAccount = InferAccount<TClient>;
 
-			// Create emitter for transaction broadcast events
+			// Create emitter for transaction events
 			const emitter = new Emitter<{
 				'transaction:broadcasted': TrackedTransaction<TMetadata>;
+				'transaction:fetched': KnownTrackedTransaction<TMetadata>;
 			}>();
 
 			/**
@@ -273,101 +519,47 @@ export function createTrackedWalletClient<TMetadata>(
 			}
 
 			/**
-			 * Extract transaction context from a serialized (signed) transaction.
-			 * Parses the transaction and recovers the sender address.
-			 *
-			 * @param serializedTransaction - The RLP-encoded signed transaction
-			 * @returns TransactionContext with from address and nonce
+			 * Fetch full transaction data and emit transaction:fetched event.
+			 * Non-blocking, runs in background. Does not throw.
 			 */
-			async function extractRawTransactionContext(
-				serializedTransaction: TransactionSerialized,
-			): Promise<TransactionContext> {
-				// Parse the serialized transaction to get the nonce
-				const parsedTx = parseTransaction(serializedTransaction);
-
-				if (parsedTx.nonce === undefined) {
-					throw new Error(
-						'[TrackedWalletClient] Could not extract nonce from serialized transaction.',
-					);
-				}
-
-				// Recover the sender address from the signature
-				const from = await recoverTransactionAddress({
-					serializedTransaction,
-				});
-
-				return {
-					from,
-					intendedNonce: parsedTx.nonce,
-				};
-			}
-
-			/**
-			 * Fetch the transaction after broadcast to verify nonce.
-			 * Logs a warning if the nonce was overridden or if tx cannot be found.
-			 *
-			 * @param hash - The transaction hash
-			 * @param intendedNonce - The nonce we intended to use
-			 * @returns The actual nonce, or the intended nonce if fetch failed
-			 */
-			async function verifyTransactionNonce(
+			async function fetchAndEmitFullData(
 				hash: Hash,
-				intendedNonce: number,
-			): Promise<number> {
+				metadata: TMetadata,
+				broadcastTimestampMs: number,
+			): Promise<void> {
 				try {
 					const tx = await publicClient.getTransaction({hash});
-					const actualNonce = tx.nonce;
-
-					if (actualNonce !== intendedNonce) {
-						console.warn(
-							`[TrackedWalletClient] Nonce mismatch: intended ${intendedNonce}, actual ${actualNonce}. ` +
-								`Wallet may have overridden the nonce.`,
-						);
-					}
-
-					return actualNonce;
-				} catch (fetchError) {
-					// Transaction not found in mempool/chain yet
-					console.warn(
-						`[TrackedWalletClient] Could not fetch tx ${hash} after broadcast. ` +
-							`It may not be in the mempool yet.`,
+					const knownTx = createKnownTrackedTransaction(
+						tx,
+						metadata,
+						broadcastTimestampMs,
 					);
-					return intendedNonce;
+					emitter.emit('transaction:fetched', knownTx);
+				} catch (error) {
+					// Log but don't throw - transaction:fetched simply won't fire
+					console.warn(
+						`[TrackedWalletClient] Could not fetch tx ${hash}. ` +
+							`transaction:fetched event will not be emitted. Error: ${error}`,
+					);
 				}
-			}
-
-			/**
-			 * Create a tracked transaction record.
-			 */
-			function createTrackedTransactionRecord(
-				txHash: Hash,
-				from: Address,
-				nonce: number,
-				metadata: TMetadata,
-			): TrackedTransaction<TMetadata> {
-				return {
-					hash: txHash,
-					from,
-					nonce,
-					chainId: walletClient.chain?.id,
-					metadata,
-					broadcastTimestampMs: Date.now(),
-				};
 			}
 
 			/**
 			 * Common wrapper for transaction methods that broadcast (sendTransaction, writeContract).
-			 * Handles nonce resolution, underlying call, post-broadcast verification, and tracking record creation.
+			 * Emits transaction:broadcasted immediately with intended values,
+			 * then fetches and emits transaction:fetched with actual values.
 			 */
 			async function executeTrackedTransaction<T, R>(args: {
 				account?: Account | Address;
 				nonce?: NonceOption;
 				metadata: TMetadata;
 				restArgs: T;
+				intendedParams: IntendedTransactionParams;
 				execute: (argsWithNonce: T & {nonce: number}) => Promise<R>;
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
-				const {metadata, restArgs, execute, extractHash} = args;
+				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
+				const broadcastTimestampMs = Date.now();
 
 				// Extract common context
 				const {from, intendedNonce} = await extractTransactionContext(args);
@@ -381,26 +573,28 @@ export function createTrackedWalletClient<TMetadata>(
 				});
 				const hash = extractHash(result);
 
-				// Verify transaction and get actual nonce
-				const actualNonce = await verifyTransactionNonce(hash, intendedNonce);
-
-				// Create tracked transaction record
-				const trackedTx = createTrackedTransactionRecord(
+				// Emit transaction:broadcasted immediately with intended values
+				const unknownTx = createUnknownTrackedTransaction(
 					hash,
 					from,
-					actualNonce,
+					intendedNonce,
+					walletClient.chain?.id,
 					metadata,
+					broadcastTimestampMs,
+					intendedParams,
 				);
+				emitter.emit('transaction:broadcasted', unknownTx);
 
-				// Emit transaction broadcasted event
-				emitter.emit('transaction:broadcasted', trackedTx);
+				// Fire-and-forget: fetch full data and emit transaction:fetched
+				fetchAndEmitFullData(hash, metadata, broadcastTimestampMs);
 
 				return result;
 			}
 
 			/**
 			 * Common wrapper for raw transaction broadcasts (sendRawTransaction).
-			 * Decodes the transaction to extract from/nonce, broadcasts, and creates tracking record.
+			 * For raw transactions, we can parse full data immediately.
+			 * Emits KnownTrackedTransaction directly to transaction:broadcasted.
 			 */
 			async function executeTrackedRawTransaction<R>(args: {
 				serializedTransaction: TransactionSerialized;
@@ -409,29 +603,31 @@ export function createTrackedWalletClient<TMetadata>(
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
+				const broadcastTimestampMs = Date.now();
 
-				// Extract context from the serialized transaction
-				const {from, intendedNonce} = await extractRawTransactionContext(
-					serializedTransaction,
-				);
+				const from = await recoverTransactionAddress({serializedTransaction});
+
+				const parsedTx = parseTransaction(serializedTransaction);
 
 				// Execute the broadcast
 				const result = await execute();
 				const hash = extractHash(result);
 
-				// For raw transactions, the nonce is already embedded, so no verification needed
-				// (wallet cannot override nonce in an already-signed transaction)
-
-				// Create tracked transaction record
-				const trackedTx = createTrackedTransactionRecord(
-					hash,
+				// For raw transactions, we can parse full data immediately
+				const knownTx = createKnownTrackedTransactionFromRaw(
+					parsedTx,
 					from,
-					intendedNonce,
+					hash,
 					metadata,
+					walletClient.chain?.id,
+					broadcastTimestampMs,
 				);
 
-				// Emit transaction broadcasted event
-				emitter.emit('transaction:broadcasted', trackedTx);
+				// Emit as KnownTrackedTransaction since we have all data
+				emitter.emit('transaction:broadcasted', knownTx);
+
+				// Also emit to transaction:fetched for consistency
+				emitter.emit('transaction:fetched', knownTx);
 
 				return result;
 			}
@@ -472,12 +668,14 @@ export function createTrackedWalletClient<TMetadata>(
 					>,
 				): Promise<Hash> {
 					const {metadata, nonce, ...writeArgs} = args;
+					const intendedParams = extractIntendedParamsFromWriteContract(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
 						restArgs: writeArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.writeContract(argsWithNonce as any),
 						extractHash: (hash) => hash,
@@ -495,12 +693,14 @@ export function createTrackedWalletClient<TMetadata>(
 					>,
 				): Promise<Hash> {
 					const {metadata, nonce, ...sendArgs} = args;
+					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
 						restArgs: sendArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.sendTransaction(argsWithNonce as any),
 						extractHash: (hash) => hash,
@@ -549,12 +749,14 @@ export function createTrackedWalletClient<TMetadata>(
 					>,
 				): Promise<TransactionReceipt> {
 					const {metadata, nonce, ...writeArgs} = args;
+					const intendedParams = extractIntendedParamsFromWriteContract(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
 						restArgs: writeArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.writeContractSync(argsWithNonce as any),
 						extractHash: (receipt) => receipt.transactionHash,
@@ -572,12 +774,14 @@ export function createTrackedWalletClient<TMetadata>(
 					>,
 				): Promise<TransactionReceipt> {
 					const {metadata, nonce, ...sendArgs} = args;
+					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
 						restArgs: sendArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.sendTransactionSync(argsWithNonce as any),
 						extractHash: (receipt) => receipt.transactionHash,
@@ -609,6 +813,14 @@ export function createTrackedWalletClient<TMetadata>(
 				offTransactionBroadcasted: (
 					listener: (event: TrackedTransaction<TMetadata>) => void,
 				) => emitter.off('transaction:broadcasted', listener),
+
+				onTransactionFetched: (
+					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+				) => emitter.on('transaction:fetched', listener),
+
+				offTransactionFetched: (
+					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+				) => emitter.off('transaction:fetched', listener),
 			};
 		},
 	};
@@ -636,9 +848,10 @@ function createAutoPopulateBuilder<
 			type TChain = InferChain<TClient>;
 			type TAccount = InferAccount<TClient>;
 
-			// Create emitter for transaction broadcast events
+			// Create emitter for transaction events
 			const emitter = new Emitter<{
 				'transaction:broadcasted': TrackedTransaction<TMetadata>;
+				'transaction:fetched': KnownTrackedTransaction<TMetadata>;
 			}>();
 
 			/**
@@ -680,74 +893,29 @@ function createAutoPopulateBuilder<
 			}
 
 			/**
-			 * Extract transaction context from a serialized (signed) transaction.
+			 * Fetch full transaction data and emit transaction:fetched event.
+			 * Non-blocking, runs in background. Does not throw.
 			 */
-			async function extractRawTransactionContext(
-				serializedTransaction: TransactionSerialized,
-			): Promise<TransactionContext> {
-				const parsedTx = parseTransaction(serializedTransaction);
-
-				if (parsedTx.nonce === undefined) {
-					throw new Error(
-						'[TrackedWalletClient] Could not extract nonce from serialized transaction.',
-					);
-				}
-
-				const from = await recoverTransactionAddress({
-					serializedTransaction,
-				});
-
-				return {
-					from,
-					intendedNonce: parsedTx.nonce,
-				};
-			}
-
-			/**
-			 * Fetch the transaction after broadcast to verify nonce.
-			 */
-			async function verifyTransactionNonce(
+			async function fetchAndEmitFullData(
 				hash: Hash,
-				intendedNonce: number,
-			): Promise<number> {
+				metadata: TMetadata,
+				broadcastTimestampMs: number,
+			): Promise<void> {
 				try {
 					const tx = await publicClient.getTransaction({hash});
-					const actualNonce = tx.nonce;
-
-					if (actualNonce !== intendedNonce) {
-						console.warn(
-							`[TrackedWalletClient] Nonce mismatch: intended ${intendedNonce}, actual ${actualNonce}. ` +
-								`Wallet may have overridden the nonce.`,
-						);
-					}
-
-					return actualNonce;
-				} catch (fetchError) {
-					console.warn(
-						`[TrackedWalletClient] Could not fetch tx ${hash} after broadcast. ` +
-							`It may not be in the mempool yet.`,
+					const knownTx = createKnownTrackedTransaction(
+						tx,
+						metadata,
+						broadcastTimestampMs,
 					);
-					return intendedNonce;
+					emitter.emit('transaction:fetched', knownTx);
+				} catch (error) {
+					// Log but don't throw - transaction:fetched simply won't fire
+					console.warn(
+						`[TrackedWalletClient] Could not fetch tx ${hash}. ` +
+							`transaction:fetched event will not be emitted. Error: ${error}`,
+					);
 				}
-			}
-
-			/**
-			 * Create a tracked transaction record.
-			 */
-			function createTrackedTransactionRecord(
-				txHash: Hash,
-				from: Address,
-				nonce: number,
-				metadata: TMetadata,
-			): TrackedTransaction<TMetadata> {
-				return {
-					hash: txHash,
-					from,
-					nonce,
-					chainId: walletClient.chain?.id,
-					metadata,
-					broadcastTimestampMs: Date.now(),
-				};
 			}
 
 			/**
@@ -781,16 +949,20 @@ function createAutoPopulateBuilder<
 
 			/**
 			 * Common wrapper for transaction methods that broadcast.
+			 * Emits transaction:broadcasted immediately with intended values,
+			 * then fetches and emits transaction:fetched with actual values.
 			 */
 			async function executeTrackedTransaction<T, R>(args: {
 				account?: Account | Address;
 				nonce?: NonceOption;
 				metadata: TMetadata;
 				restArgs: T;
+				intendedParams: IntendedTransactionParams;
 				execute: (argsWithNonce: T & {nonce: number}) => Promise<R>;
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
-				const {metadata, restArgs, execute, extractHash} = args;
+				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
+				const broadcastTimestampMs = Date.now();
 
 				const {from, intendedNonce} = await extractTransactionContext(args);
 
@@ -802,22 +974,28 @@ function createAutoPopulateBuilder<
 				});
 				const hash = extractHash(result);
 
-				const actualNonce = await verifyTransactionNonce(hash, intendedNonce);
-
-				const trackedTx = createTrackedTransactionRecord(
+				// Emit transaction:broadcasted immediately with intended values
+				const unknownTx = createUnknownTrackedTransaction(
 					hash,
 					from,
-					actualNonce,
+					intendedNonce,
+					walletClient.chain?.id,
 					metadata,
+					broadcastTimestampMs,
+					intendedParams,
 				);
+				emitter.emit('transaction:broadcasted', unknownTx);
 
-				emitter.emit('transaction:broadcasted', trackedTx);
+				// Fire-and-forget: fetch full data and emit transaction:fetched
+				fetchAndEmitFullData(hash, metadata, broadcastTimestampMs);
 
 				return result;
 			}
 
 			/**
 			 * Common wrapper for raw transaction broadcasts.
+			 * For raw transactions, we can parse full data immediately.
+			 * Emits KnownTrackedTransaction directly to transaction:broadcasted.
 			 */
 			async function executeTrackedRawTransaction<R>(args: {
 				serializedTransaction: TransactionSerialized;
@@ -826,22 +1004,29 @@ function createAutoPopulateBuilder<
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
+				const broadcastTimestampMs = Date.now();
 
-				const {from, intendedNonce} = await extractRawTransactionContext(
-					serializedTransaction,
-				);
+				const from = await recoverTransactionAddress({serializedTransaction});
+				const parsedTx = parseTransaction(serializedTransaction);
 
+				// Execute the broadcast
 				const result = await execute();
 				const hash = extractHash(result);
 
-				const trackedTx = createTrackedTransactionRecord(
-					hash,
+				// For raw transactions, we can parse full data immediately
+				const knownTx = createKnownTrackedTransactionFromRaw(
+					parsedTx,
 					from,
-					intendedNonce,
+					hash,
 					metadata,
+					walletClient.chain?.id,
+					broadcastTimestampMs,
 				);
 
-				emitter.emit('transaction:broadcasted', trackedTx);
+				// Emit as KnownTrackedTransaction since we have all data
+				emitter.emit('transaction:broadcasted', knownTx);
+
+				// We do not emit fetched as the tx is already known
 
 				return result;
 			}
@@ -894,11 +1079,14 @@ function createAutoPopulateBuilder<
 						args: args.args as readonly unknown[],
 					} as TMetadata;
 
+					const intendedParams = extractIntendedParamsFromWriteContract(args);
+
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: finalMetadata,
 						restArgs: writeArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.writeContract(argsWithNonce as any),
 						extractHash: (hash) => hash,
@@ -916,12 +1104,14 @@ function createAutoPopulateBuilder<
 					>,
 				): Promise<Hash> {
 					const {metadata, nonce, ...sendArgs} = args;
+					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
 						restArgs: sendArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.sendTransaction(argsWithNonce as any),
 						extractHash: (hash) => hash,
@@ -982,11 +1172,14 @@ function createAutoPopulateBuilder<
 						args: args.args as readonly unknown[],
 					} as TMetadata;
 
+					const intendedParams = extractIntendedParamsFromWriteContract(args);
+
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: finalMetadata,
 						restArgs: writeArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.writeContractSync(argsWithNonce as any),
 						extractHash: (receipt) => receipt.transactionHash,
@@ -1004,12 +1197,14 @@ function createAutoPopulateBuilder<
 					>,
 				): Promise<TransactionReceipt> {
 					const {metadata, nonce, ...sendArgs} = args;
+					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
 						restArgs: sendArgs,
+						intendedParams,
 						execute: (argsWithNonce) =>
 							walletClient.sendTransactionSync(argsWithNonce as any),
 						extractHash: (receipt) => receipt.transactionHash,
@@ -1034,6 +1229,9 @@ function createAutoPopulateBuilder<
 				// Event subscription methods
 				// ============================================
 
+				// on: emitter.on.bind(emitter),
+				// off: emitter.off.bind(emitter),
+
 				onTransactionBroadcasted: (
 					listener: (event: TrackedTransaction<TMetadata>) => void,
 				) => emitter.on('transaction:broadcasted', listener),
@@ -1041,6 +1239,14 @@ function createAutoPopulateBuilder<
 				offTransactionBroadcasted: (
 					listener: (event: TrackedTransaction<TMetadata>) => void,
 				) => emitter.off('transaction:broadcasted', listener),
+
+				onTransactionFetched: (
+					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+				) => emitter.on('transaction:fetched', listener),
+
+				offTransactionFetched: (
+					listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+				) => emitter.off('transaction:fetched', listener),
 			};
 		},
 	};

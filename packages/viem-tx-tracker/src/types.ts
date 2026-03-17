@@ -85,17 +85,97 @@ export type MetadataField<TMetadata> = undefined extends TMetadata
 	: {metadata: TMetadata};
 
 /**
- * A tracked transaction record with all relevant information for tracking.
- * The metadata field type matches what was provided to the TrackedWalletClient.
+ * Access list type used in EIP-2930 and EIP-1559 transactions.
  */
-export interface TrackedTransaction<TMetadata> {
-	chainId?: number;
+export type AccessList = readonly {
+	address: Address;
+	storageKeys: readonly `0x${string}`[];
+}[];
+
+/**
+ * Base transaction fields present in all tracked transactions.
+ */
+export type BaseTrackedTransaction<TMetadata> = {
+	readonly chainId?: number;
 	readonly hash: `0x${string}`;
 	readonly from: `0x${string}`;
-	nonce?: number;
 	readonly broadcastTimestampMs: number;
 	readonly metadata: TMetadata;
-}
+};
+
+/**
+ * A fully known tracked transaction with all fields confirmed from chain.
+ * Emitted via transaction:fetched when tx data is fetched from chain,
+ * or immediately for sendRawTransaction where we can parse the tx.
+ *
+ * When known=true, all values are the actual confirmed values used by the chain.
+ */
+export type KnownTrackedTransaction<TMetadata> =
+	BaseTrackedTransaction<TMetadata> & {
+		readonly known: true;
+		readonly to: `0x${string}` | null;
+		readonly nonce: number;
+		readonly value: bigint;
+		readonly data: `0x${string}`;
+		readonly gas: bigint;
+	} & (
+			| {
+					readonly txType: 'eip1559';
+					readonly chainId: number; // Required for EIP-1559
+					readonly maxFeePerGas: bigint;
+					readonly maxPriorityFeePerGas: bigint;
+					readonly accessList?: AccessList; // EIP-1559 can also have access lists
+			  }
+			| {
+					readonly txType: 'legacy';
+					readonly chainId?: number; // Optional for legacy (pre-EIP-155 txs don't have it)
+					readonly gasPrice: bigint;
+			  }
+			| {
+					readonly txType: 'eip2930';
+					readonly chainId: number; // Required for EIP-2930
+					readonly gasPrice: bigint;
+					readonly accessList: AccessList; // Required for EIP-2930
+			  }
+		);
+
+/**
+ * A partially known tracked transaction with intended/provided values.
+ * Emitted immediately via transaction:broadcasted.
+ *
+ * When known=false, values are what we intended/provided, but the wallet
+ * may have modified them (e.g., gas estimation, nonce override).
+ * All optional fields are populated if we have the data.
+ *
+ * txType is inferred from provided params:
+ * - maxFeePerGas provided → 'eip1559'
+ * - gasPrice + accessList provided → 'eip2930'
+ * - gasPrice only → 'legacy'
+ * - undefined → wallet will determine type
+ */
+export type UnknownTrackedTransaction<TMetadata> =
+	BaseTrackedTransaction<TMetadata> & {
+		readonly known: false;
+		readonly txType?: 'eip1559' | 'legacy' | 'eip2930'; // Inferred from params if possible
+		readonly to?: `0x${string}` | null;
+		readonly nonce?: number;
+		readonly value?: bigint;
+		readonly data?: `0x${string}`;
+		readonly gas?: bigint;
+		readonly gasPrice?: bigint;
+		readonly maxFeePerGas?: bigint;
+		readonly maxPriorityFeePerGas?: bigint;
+		readonly accessList?: AccessList;
+	};
+
+/**
+ * A tracked transaction - discriminated by 'known' field.
+ * - known=true: Values are confirmed from chain fetch
+ * - known=false: Values are intended/provided, may differ from actual
+ */
+export type TrackedTransaction<TMetadata> =
+	| KnownTrackedTransaction<TMetadata>
+	| UnknownTrackedTransaction<TMetadata>;
 
 /**
  * Extended WriteContractParameters with metadata and flexible nonce.
@@ -403,6 +483,25 @@ export interface TrackedWalletClient<
 	offTransactionBroadcasted(
 		listener: (event: TrackedTransaction<TMetadata>) => void,
 	): void;
+
+	/**
+	 * Subscribe to transaction fetched events.
+	 * Fires when full transaction data is successfully fetched from chain.
+	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
+	 * @param listener - Callback function receiving KnownTrackedTransaction with TMetadata
+	 * @returns Unsubscribe function
+	 */
+	onTransactionFetched(
+		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+	): () => void;
+
+	/**
+	 * Unsubscribe from transaction fetched events.
+	 * @param listener - The same listener function passed to onTransactionFetched
+	 */
+	offTransactionFetched(
+		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+	): void;
 }
 
 /**
@@ -549,5 +648,24 @@ export interface TrackedWalletClientAutoPopulate<
 	 */
 	offTransactionBroadcasted(
 		listener: (event: TrackedTransaction<TMetadata>) => void,
+	): void;
+
+	/**
+	 * Subscribe to transaction fetched events.
+	 * Fires when full transaction data is successfully fetched from chain.
+	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
+	 * @param listener - Callback function receiving KnownTrackedTransaction with TMetadata
+	 * @returns Unsubscribe function
+	 */
+	onTransactionFetched(
+		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
+	): () => void;
+
+	/**
+	 * Unsubscribe from transaction fetched events.
+	 * @param listener - The same listener function passed to onTransactionFetched
+	 */
+	offTransactionFetched(
+		listener: (event: KnownTrackedTransaction<TMetadata>) => void,
 	): void;
 }

@@ -18,6 +18,8 @@ import {
 	type TrackedWalletClient,
 	type TrackedWalletClientAutoPopulate,
 	type TrackedTransaction,
+	type KnownTrackedTransaction,
+	type UnknownTrackedTransaction,
 	type PopulatedMetadata,
 	type FunctionCallMetadata,
 } from '../src/index.js';
@@ -837,6 +839,463 @@ describe('TrackedWalletClient with populateMetadata', () => {
 
 			// Cleanup
 			extendedClient.offTransactionBroadcasted(listener);
+		});
+	});
+});
+
+describe('TrackedTransaction Discriminated Union', () => {
+	let publicClient: PublicClient;
+	let walletClient: WalletClient<Transport, Chain, Account>;
+	let trackedClient: TrackedWalletClient<
+		TestMetadata,
+		Transport,
+		Chain,
+		Account
+	>;
+	let account: ReturnType<typeof privateKeyToAccount>;
+
+	beforeAll(() => {
+		account = privateKeyToAccount(TEST_PRIVATE_KEY);
+
+		publicClient = createPublicClient({
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		walletClient = createWalletClient({
+			account,
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		trackedClient = createTrackedWalletClient<TestMetadata>().using(
+			walletClient,
+			publicClient,
+		);
+	});
+
+	describe('transaction:broadcasted with known=false (sendTransaction/writeContract)', () => {
+		it('should emit UnknownTrackedTransaction with known=false for sendTransaction', async () => {
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {
+					id: 'unknown-tx-test',
+					title: 'Unknown TX Test',
+				},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			// Type narrowing should work
+			expect(emittedEvent.known).toBe(false);
+			if (!emittedEvent.known) {
+				// TypeScript knows this is UnknownTrackedTransaction
+				expect(emittedEvent.hash).toBe(txHash);
+				expect(emittedEvent.to).toBe(RECIPIENT_ADDRESS);
+				expect(emittedEvent.value).toBe(parseEther('0.01'));
+				expect(typeof emittedEvent.nonce).toBe('number');
+				expect(emittedEvent.metadata?.id).toBe('unknown-tx-test');
+			}
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+
+			// Wait for receipt to ensure tx is processed
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should include intended gas params in UnknownTrackedTransaction', async () => {
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				maxFeePerGas: parseEther('0.000000002'), // 2 gwei
+				maxPriorityFeePerGas: parseEther('0.000000001'), // 1 gwei
+			});
+
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			expect(emittedEvent.known).toBe(false);
+			if (!emittedEvent.known) {
+				expect(emittedEvent.txType).toBe('eip1559');
+				expect(emittedEvent.maxFeePerGas).toBe(parseEther('0.000000002'));
+				expect(emittedEvent.maxPriorityFeePerGas).toBe(
+					parseEther('0.000000001'),
+				);
+			}
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should emit UnknownTrackedTransaction with known=false for writeContract', async () => {
+			// Deploy a contract first
+			const deployHash = await walletClient.deployContract({
+				abi: TEST_CONTRACT_ABI,
+				bytecode: TEST_CONTRACT_BYTECODE,
+				args: [account.address, parseEther('1000')],
+			});
+			const receipt = await publicClient.waitForTransactionReceipt({
+				hash: deployHash,
+			});
+			const tokenAddress = receipt.contractAddress!;
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				metadata: {
+					title: 'Token Transfer',
+				},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			expect(emittedEvent.known).toBe(false);
+			if (!emittedEvent.known) {
+				expect(emittedEvent.hash).toBe(txHash);
+				expect(emittedEvent.to).toBe(tokenAddress);
+				expect(emittedEvent.value).toBe(0n);
+				expect(emittedEvent.metadata?.title).toBe('Token Transfer');
+			}
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('transaction:broadcasted with known=true (sendRawTransaction)', () => {
+		it('should emit KnownTrackedTransaction with known=true for sendRawTransaction', async () => {
+			const nonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+
+			const signedTx = await walletClient.signTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				nonce,
+				gas: 21000n,
+				maxFeePerGas: parseEther('0.000000002'),
+				maxPriorityFeePerGas: parseEther('0.000000001'),
+			});
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				metadata: {
+					id: 'known-tx-test',
+				},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			// Type narrowing should work
+			expect(emittedEvent.known).toBe(true);
+			if (emittedEvent.known) {
+				// TypeScript knows this is KnownTrackedTransaction
+				expect(emittedEvent.hash).toBe(txHash);
+				expect(emittedEvent.to?.toLowerCase()).toBe(RECIPIENT_ADDRESS.toLowerCase());
+				expect(emittedEvent.value).toBe(parseEther('0.01'));
+				expect(emittedEvent.gas).toBe(21000n);
+				expect(emittedEvent.nonce).toBe(nonce);
+				expect(emittedEvent.metadata?.id).toBe('known-tx-test');
+				expect(emittedEvent.txType).toBe('eip1559');
+				if (emittedEvent.txType === 'eip1559') {
+					expect(emittedEvent.maxFeePerGas).toBe(parseEther('0.000000002'));
+					expect(emittedEvent.maxPriorityFeePerGas).toBe(
+						parseEther('0.000000001'),
+					);
+				}
+			}
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should include all transaction data from parsed raw tx', async () => {
+			const nonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+
+			const signedTx = await walletClient.signTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.05'),
+				data: '0x1234',
+				nonce,
+				gas: 30000n,
+				maxFeePerGas: parseEther('0.000000003'),
+				maxPriorityFeePerGas: parseEther('0.000000002'),
+			});
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+			});
+
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			expect(emittedEvent.known).toBe(true);
+			if (emittedEvent.known) {
+				expect(emittedEvent.hash).toBe(txHash);
+				expect(emittedEvent.to?.toLowerCase()).toBe(RECIPIENT_ADDRESS.toLowerCase());
+				expect(emittedEvent.value).toBe(parseEther('0.05'));
+				expect(emittedEvent.data).toBe('0x1234');
+				expect(emittedEvent.gas).toBe(30000n);
+				expect(emittedEvent.nonce).toBe(nonce);
+				expect(emittedEvent.from.toLowerCase()).toBe(
+					account.address.toLowerCase(),
+				);
+			}
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(listener);
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('transaction:fetched event', () => {
+		it('should emit KnownTrackedTransaction via transaction:fetched for sendTransaction', async () => {
+			const broadcastListener = vi.fn();
+			const fetchedListener = vi.fn();
+
+			trackedClient.onTransactionBroadcasted(broadcastListener);
+			trackedClient.onTransactionFetched(fetchedListener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {
+					id: 'fetched-event-test',
+				},
+			});
+
+			// Wait for the async fetch to complete
+			await new Promise((resolve) => setTimeout(resolve, 500));
+
+			// transaction:broadcasted should have known=false
+			expect(broadcastListener).toHaveBeenCalledTimes(1);
+			const broadcastEvent: TrackedTransaction<TestMetadata> =
+				broadcastListener.mock.calls[0][0];
+			expect(broadcastEvent.known).toBe(false);
+
+			// transaction:fetched should have known=true with full data
+			expect(fetchedListener).toHaveBeenCalledTimes(1);
+			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
+				fetchedListener.mock.calls[0][0];
+			expect(fetchedEvent.known).toBe(true);
+			expect(fetchedEvent.hash).toBe(txHash);
+			expect(fetchedEvent.metadata?.id).toBe('fetched-event-test');
+			expect(typeof fetchedEvent.gas).toBe('bigint');
+			expect(typeof fetchedEvent.nonce).toBe('number');
+			expect(fetchedEvent.txType).toBeDefined();
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(broadcastListener);
+			trackedClient.offTransactionFetched(fetchedListener);
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should emit transaction:fetched for sendRawTransaction', async () => {
+			const nonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+
+			const signedTx = await walletClient.signTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				nonce,
+				gas: 21000n,
+				maxFeePerGas: parseEther('0.000000002'),
+				maxPriorityFeePerGas: parseEther('0.000000001'),
+			});
+
+			const broadcastListener = vi.fn();
+			const fetchedListener = vi.fn();
+
+			trackedClient.onTransactionBroadcasted(broadcastListener);
+			trackedClient.onTransactionFetched(fetchedListener);
+
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				metadata: {
+					id: 'raw-fetched-test',
+				},
+			});
+
+			// For raw transactions, both events should fire immediately
+			// (no async fetch needed)
+			expect(broadcastListener).toHaveBeenCalledTimes(1);
+			expect(fetchedListener).toHaveBeenCalledTimes(1);
+
+			// Both should have the same known tx data
+			const broadcastEvent: TrackedTransaction<TestMetadata> =
+				broadcastListener.mock.calls[0][0];
+			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
+				fetchedListener.mock.calls[0][0];
+
+			expect(broadcastEvent.known).toBe(true);
+			expect(fetchedEvent.known).toBe(true);
+			expect(broadcastEvent.hash).toBe(fetchedEvent.hash);
+
+			// Cleanup
+			trackedClient.offTransactionBroadcasted(broadcastListener);
+			trackedClient.offTransactionFetched(fetchedListener);
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should allow unsubscribing from transaction:fetched', async () => {
+			const fetchedListener = vi.fn();
+			trackedClient.onTransactionFetched(fetchedListener);
+
+			// First transaction
+			const txHash1 = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.001'),
+			});
+
+			// Wait for async fetch
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			expect(fetchedListener).toHaveBeenCalledTimes(1);
+
+			// Unsubscribe
+			trackedClient.offTransactionFetched(fetchedListener);
+
+			// Second transaction
+			const txHash2 = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.001'),
+			});
+
+			// Wait for potential async fetch
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			expect(fetchedListener).toHaveBeenCalledTimes(1); // Still 1, not 2
+
+			await publicClient.waitForTransactionReceipt({hash: txHash1});
+			await publicClient.waitForTransactionReceipt({hash: txHash2});
+		});
+	});
+
+	describe('txType discriminated union', () => {
+		it('should correctly identify eip1559 transactions', async () => {
+			const nonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+
+			const signedTx = await walletClient.signTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				nonce,
+				gas: 21000n,
+				maxFeePerGas: parseEther('0.000000002'),
+				maxPriorityFeePerGas: parseEther('0.000000001'),
+			});
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+			});
+
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			expect(emittedEvent.known).toBe(true);
+			if (emittedEvent.known) {
+				expect(emittedEvent.txType).toBe('eip1559');
+
+				// Type narrowing on txType
+				if (emittedEvent.txType === 'eip1559') {
+					// TypeScript knows maxFeePerGas and maxPriorityFeePerGas exist
+					expect(typeof emittedEvent.maxFeePerGas).toBe('bigint');
+					expect(typeof emittedEvent.maxPriorityFeePerGas).toBe('bigint');
+				}
+			}
+
+			trackedClient.offTransactionBroadcasted(listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should preserve accessList for eip1559 transactions', async () => {
+			const nonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+
+			// EIP-1559 with access list
+			const signedTx = await walletClient.signTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				nonce,
+				gas: 30000n,
+				maxFeePerGas: parseEther('0.000000002'),
+				maxPriorityFeePerGas: parseEther('0.000000001'),
+				accessList: [
+					{
+						address: RECIPIENT_ADDRESS,
+						storageKeys: [
+							'0x0000000000000000000000000000000000000000000000000000000000000001',
+						],
+					},
+				],
+			});
+
+			const listener = vi.fn();
+			trackedClient.onTransactionBroadcasted(listener);
+
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+			});
+
+			const emittedEvent: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+
+			expect(emittedEvent.known).toBe(true);
+			if (emittedEvent.known) {
+				expect(emittedEvent.txType).toBe('eip1559');
+				if (emittedEvent.txType === 'eip1559') {
+					expect(emittedEvent.accessList).toBeDefined();
+					expect(emittedEvent.accessList?.length).toBeGreaterThan(0);
+				}
+			}
+
+			trackedClient.offTransactionBroadcasted(listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 	});
 });
