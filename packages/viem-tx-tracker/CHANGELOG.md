@@ -1,5 +1,11 @@
 # @etherkit/viem-tx-tracker
 
+## 0.0.9
+
+### Patch Changes
+
+- new version
+
 ## 0.0.8
 
 ### Patch Changes
