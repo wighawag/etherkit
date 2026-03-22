@@ -1,5 +1,11 @@
 # @etherkit/tx-observer
 
+## 0.0.11
+
+### Patch Changes
+
+- 28c4d28: skip process when no tx to process
+
 ## 0.0.10
 
 ### Patch Changes
