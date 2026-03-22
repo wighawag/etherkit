@@ -481,6 +481,22 @@ export function createTransactionObserver(config: {
 			}
 		}
 
+		// IMPORTANT: Fetch nonce count BEFORE eth_getTransactionByHash to avoid race condition.
+		// If we checked tx first and it was not found, then the tx got included before nonce check,
+		// we'd incorrectly mark it as Dropped. By fetching nonce first, we capture the state
+		// before looking up the tx, ensuring correct Dropped vs NotFound determination.
+		const account = transaction.from;
+		const latestTransactionCount = await provider.request({
+			method: 'eth_getTransactionCount',
+			params: [account, 'latest'],
+		});
+		// Abort if clear() was called
+		if (clearGeneration !== startGeneration) {
+			return false;
+		}
+		const latestNonce = Number(latestTransactionCount);
+		logger.debug(`latestNonce: ${latestNonce}`);
+
 		const txFromPeers = await provider.request({
 			method: 'eth_getTransactionByHash',
 			params: [transaction.hash],
@@ -593,34 +609,41 @@ export function createTransactionObserver(config: {
 				return false; // we skip it for now
 			}
 
-			// TODO cache finalityNonce
-			const account = transaction.from;
-			const tranactionCount = await provider.request({
-				method: 'eth_getTransactionCount',
-				params: [account, {blockHash: latestFinalizedBlock.hash}],
-			});
-			// Abort if clear() was called
-			if (clearGeneration !== startGeneration) {
-				return false;
-			}
-			const finalityNonce = Number(tranactionCount);
-
-			logger.debug(`finalityNonce: ${finalityNonce}`);
-
+			// Check if transaction is dropped based on latest nonce (fetched before tx lookup)
 			if (
 				typeof transaction.nonce === 'number' &&
-				finalityNonce > transaction.nonce
+				latestNonce > transaction.nonce
 			) {
+				// Transaction nonce is already used - mark as dropped
+				// Now check if it's final
+				const finalizedTransactionCount = await provider.request({
+					method: 'eth_getTransactionCount',
+					params: [account, {blockHash: latestFinalizedBlock.hash}],
+				});
+				// Abort if clear() was called
+				if (clearGeneration !== startGeneration) {
+					return false;
+				}
+				const finalityNonce = Number(finalizedTransactionCount);
+
+				logger.debug(`finalityNonce: ${finalityNonce}`);
+
+				const isFinal =
+					typeof transaction.nonce === 'number' &&
+					finalityNonce > transaction.nonce;
+				const finalTimestamp = isFinal
+					? transaction.broadcastTimestampMs !== undefined
+						? Math.floor(transaction.broadcastTimestampMs / 1000)
+						: latestFinalizedBlockTime
+					: undefined;
+
 				if (transaction.state) {
 					if (
 						transaction.state.inclusion !== 'Dropped' ||
-						!transaction.state.final
+						transaction.state.final !== finalTimestamp
 					) {
 						transaction.state.inclusion = 'Dropped';
-						transaction.state.final =
-							transaction.broadcastTimestampMs !== undefined
-								? Math.floor(transaction.broadcastTimestampMs / 1000)
-								: latestFinalizedBlockTime;
+						transaction.state.final = finalTimestamp;
 						transaction.state.status = undefined;
 						changes = true;
 					}
@@ -628,10 +651,7 @@ export function createTransactionObserver(config: {
 					transaction.state = {
 						inclusion: 'Dropped',
 						status: undefined,
-						final:
-							transaction.broadcastTimestampMs !== undefined
-								? Math.floor(transaction.broadcastTimestampMs / 1000)
-								: latestFinalizedBlockTime,
+						final: finalTimestamp,
 					};
 					changes = true;
 				}
