@@ -1,5 +1,11 @@
 # @etherkit/tx-observer
 
+## 0.0.10
+
+### Patch Changes
+
+- 2170013: status dropped triggered even when not final
+
 ## 0.0.9
 
 ### Patch Changes
