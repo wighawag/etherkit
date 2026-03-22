@@ -270,8 +270,49 @@ export function createTransactionObserver(config: {
 		}
 	}
 
+	/**
+	 * Check if a transaction needs processing (is not yet final).
+	 * A transaction is final if it's either:
+	 * - Included with a final timestamp
+	 * - Dropped with a final timestamp
+	 */
+	function isTransactionFinal(transaction: BroadcastedTransaction): boolean {
+		if (!transaction.state) {
+			return false;
+		}
+		if (transaction.state.final === undefined) {
+			return false;
+		}
+		return (
+			transaction.state.inclusion === 'Included' ||
+			transaction.state.inclusion === 'Dropped'
+		);
+	}
+
+	/**
+	 * Check if there are any transactions that need processing.
+	 * Returns true if there's at least one non-final transaction.
+	 */
+	function hasTransactionsToProcess(): boolean {
+		for (const id of Object.keys(intentsById)) {
+			const intent = intentsById[id];
+			for (const transaction of intent.transactions) {
+				if (!isTransactionFinal(transaction)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	async function process() {
 		if (!provider) {
+			return;
+		}
+
+		// Skip if there are no transactions to check
+		if (!hasTransactionsToProcess()) {
+			logger.debug('process skipped: no transactions to process');
 			return;
 		}
 
