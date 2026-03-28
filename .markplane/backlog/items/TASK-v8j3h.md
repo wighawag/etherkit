@@ -1,7 +1,7 @@
 ---
 id: TASK-v8j3h
 title: Add optional BurnerWalletManager UI component for account management
-status: draft
+status: done
 priority: low
 type: feature
 effort: medium
