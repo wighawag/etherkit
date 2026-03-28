@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "markplane": {
+      "type": "stdio",
+      "command": "markplane",
+      "args": ["mcp"],
+      "env": {},
+      "alwaysAllow": [
+        "markplane_show",
+        "markplane_summary",
+        "markplane_sync",
+        "markplane_add",
+        "markplane_link",
+        "markplane_update",
+        "markplane_graph",
+        "markplane_archive",
+        "markplane_query",
+        "markplane_plan"
+      ]
+    }
+  }
+}
