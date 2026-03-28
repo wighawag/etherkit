@@ -1,7 +1,7 @@
 ---
 id: TASK-mayki
 title: Write unit tests for burner wallet provider
-status: draft
+status: done
 priority: medium
 type: feature
 effort: medium
