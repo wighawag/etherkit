@@ -1,7 +1,7 @@
 ---
 id: TASK-inp83
 title: Add burner wallet initialization to template web app
-status: draft
+status: done
 priority: medium
 type: feature
 effort: small

@@ -9,3 +9,5 @@ export type {
 	EIP6963ProviderDetail,
 	AnnounceBurnerWalletOptions,
 } from './announcer.js';
+export {initBurnerWallet} from './init.js';
+export type {InitBurnerWalletOptions, BurnerWalletInstance} from './init.js';
