@@ -1,4 +1,5 @@
 import type {EIP1193Provider} from 'eip-1193';
+import {BURNER_WALLET_ICON_DATA_URI} from './icon.js';
 
 export type EIP6963ProviderInfo = {
 	uuid: string;
@@ -13,20 +14,6 @@ export type EIP6963ProviderDetail = {
 };
 
 export type EIP6963AnnounceProviderEvent = CustomEvent<EIP6963ProviderDetail>;
-
-// Simple flame SVG icon as a data URI for the burner wallet
-const DEFAULT_ICON =
-	'data:image/svg+xml;base64,' +
-	btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#ff6b35"/>
-      <stop offset="100%" stop-color="#ffd700"/>
-    </linearGradient>
-  </defs>
-  <circle cx="32" cy="32" r="30" fill="#1a1a2e"/>
-  <path d="M32 8c0 0-16 14-16 28a16 16 0 0 0 32 0C48 22 32 8 32 8zm0 40a8 8 0 0 1-8-8c0-6 8-16 8-16s8 10 8 16a8 8 0 0 1-8 8z" fill="url(#flame)"/>
-</svg>`);
 
 function generateUUID(): string {
 	if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -57,7 +44,7 @@ export function announceBurnerWallet(
 	const info: EIP6963ProviderInfo = {
 		uuid: options?.uuid ?? generateUUID(),
 		name: options?.name ?? 'Burner Wallet',
-		icon: options?.icon ?? DEFAULT_ICON,
+		icon: options?.icon ?? BURNER_WALLET_ICON_DATA_URI,
 		rdns: options?.rdns ?? 'app.etherplay.burner-wallet',
 	};
 

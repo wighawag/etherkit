@@ -1,7 +1,7 @@
 ---
 id: TASK-e8k3i
 title: Create burner wallet icon and branding assets
-status: draft
+status: done
 priority: medium
 type: feature
 effort: small
