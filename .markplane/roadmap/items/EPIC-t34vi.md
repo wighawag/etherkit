@@ -1,7 +1,7 @@
 ---
 id: EPIC-t34vi
 title: EIP-6963 Burner Wallet Package (@etherkit/burner-wallet)
-status: later
+status: now
 priority: medium
 started: null
 target: null
