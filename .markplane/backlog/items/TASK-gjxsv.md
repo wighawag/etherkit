@@ -1,7 +1,7 @@
 ---
 id: TASK-gjxsv
 title: Implement EIP-6963 provider announcer for wallet discovery
-status: draft
+status: done
 priority: high
 type: feature
 effort: medium
