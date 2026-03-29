@@ -63,7 +63,7 @@ describe('announceBurnerWallet', () => {
 				name: 'Custom Burner',
 				rdns: 'com.example.burner',
 				uuid: 'test-uuid-123',
-			})
+			}),
 		);
 
 		const event = listener.mock.calls[0][0] as CustomEvent;

@@ -54,11 +54,11 @@ describe('BurnerWalletStore', () => {
 			walletStore.createWallet();
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
 				'burner-wallet:mnemonic',
-				expect.any(String)
+				expect.any(String),
 			);
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
 				'burner-wallet:count',
-				'1'
+				'1',
 			);
 		});
 	});
@@ -88,7 +88,7 @@ describe('BurnerWalletStore', () => {
 		it('throws for invalid/garbage mnemonic', () => {
 			const walletStore = createBurnerWalletStore();
 			expect(() =>
-				walletStore.importMnemonic('not a valid mnemonic phrase at all')
+				walletStore.importMnemonic('not a valid mnemonic phrase at all'),
 			).toThrow();
 		});
 
@@ -101,9 +101,7 @@ describe('BurnerWalletStore', () => {
 			const walletStore = createBurnerWalletStore();
 			const originalMnemonic = walletStore.createWallet();
 
-			expect(() =>
-				walletStore.importMnemonic('garbage words here')
-			).toThrow();
+			expect(() => walletStore.importMnemonic('garbage words here')).toThrow();
 
 			// Original mnemonic should still be in place
 			expect(walletStore.getMnemonic()).toBe(originalMnemonic);
@@ -193,7 +191,7 @@ describe('BurnerWalletStore', () => {
 			walletStore.createWallet();
 			walletStore.clearAll();
 			expect(localStorageMock.removeItem).toHaveBeenCalledWith(
-				'burner-wallet:mnemonic'
+				'burner-wallet:mnemonic',
 			);
 		});
 	});
@@ -221,9 +219,7 @@ describe('BurnerWalletStore', () => {
 
 		it('throws if no wallet', () => {
 			const walletStore = createBurnerWalletStore();
-			expect(() => walletStore.getPrivateKey(0)).toThrow(
-				'No wallet created'
-			);
+			expect(() => walletStore.getPrivateKey(0)).toThrow('No wallet created');
 		});
 
 		it('throws if index out of range', () => {
@@ -245,9 +241,7 @@ describe('BurnerWalletStore', () => {
 			});
 			walletStore2.importMnemonic(mnemonic);
 
-			expect(walletStore1.getPrivateKey(0)).toBe(
-				walletStore2.getPrivateKey(0)
-			);
+			expect(walletStore1.getPrivateKey(0)).toBe(walletStore2.getPrivateKey(0));
 		});
 	});
 
@@ -303,7 +297,7 @@ describe('BurnerWalletStore', () => {
 				expect.objectContaining({
 					accountCount: 1,
 					selectedIndex: 0,
-				})
+				}),
 			);
 		});
 
@@ -320,7 +314,7 @@ describe('BurnerWalletStore', () => {
 			expect(listener).toHaveBeenCalledWith(
 				expect.objectContaining({
 					accountCount: 2,
-				})
+				}),
 			);
 		});
 
@@ -384,7 +378,7 @@ describe('BurnerWalletStore', () => {
 
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
 				'custom:mnemonic',
-				expect.any(String)
+				expect.any(String),
 			);
 		});
 	});
@@ -401,7 +395,7 @@ describe('BurnerWalletStore', () => {
 			// This is a well-known address for this test vector
 			const address = walletStore.getAddress(0);
 			expect(address.toLowerCase()).toBe(
-				'0x9858effd232b4033e47d90003d41ec34ecaeda94'.toLowerCase()
+				'0x9858effd232b4033e47d90003d41ec34ecaeda94'.toLowerCase(),
 			);
 		});
 	});

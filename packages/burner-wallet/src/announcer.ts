@@ -59,7 +59,7 @@ export type AnnounceBurnerWalletOptions = {
 
 export function announceBurnerWallet(
 	provider: EIP1193Provider,
-	options?: AnnounceBurnerWalletOptions
+	options?: AnnounceBurnerWalletOptions,
 ): () => void {
 	const storagePrefix = options?.storagePrefix ?? 'burner-wallet:';
 	// Freeze info to prevent mutation by consumers (EIP-6963 spec-compliant)
@@ -79,7 +79,7 @@ export function announceBurnerWallet(
 		window.dispatchEvent(
 			new CustomEvent('eip6963:announceProvider', {
 				detail: Object.freeze(detail),
-			})
+			}),
 		);
 	}
 
@@ -95,9 +95,6 @@ export function announceBurnerWallet(
 
 	// Return cleanup function
 	return () => {
-		window.removeEventListener(
-			'eip6963:requestProvider',
-			onRequestProvider
-		);
+		window.removeEventListener('eip6963:requestProvider', onRequestProvider);
 	};
 }

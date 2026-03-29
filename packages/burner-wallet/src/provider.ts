@@ -38,7 +38,7 @@ export type BurnerWalletProviderResult = {
 };
 
 export function createBurnerWalletProvider(
-	options: BurnerWalletProviderOptions
+	options: BurnerWalletProviderOptions,
 ): BurnerWalletProviderResult {
 	const {nodeURL, store} = options;
 	const listeners = new Map<EventName, Set<EventListener>>();

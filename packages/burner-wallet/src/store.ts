@@ -10,7 +10,7 @@ import type {
 } from './types.js';
 
 export function createBurnerWalletStore(
-	options?: CreateBurnerWalletStoreOptions
+	options?: CreateBurnerWalletStoreOptions,
 ): BurnerWalletStore {
 	const prefix = options?.storagePrefix ?? 'burner-wallet:';
 	const listeners = new Set<(state: BurnerWalletState) => void>();
@@ -36,9 +36,7 @@ export function createBurnerWalletStore(
 			if (storedMnemonic) {
 				mnemonic = storedMnemonic;
 				accountCount = storedCount ? parseInt(storedCount, 10) : 1;
-				selectedIndex = storedSelected
-					? parseInt(storedSelected, 10)
-					: 0;
+				selectedIndex = storedSelected ? parseInt(storedSelected, 10) : 0;
 			}
 		} catch {
 			// localStorage unavailable
@@ -199,8 +197,7 @@ export function createBurnerWalletStore(
 
 		getPrivateKey(index: number) {
 			if (!mnemonic) throw new Error('No wallet created');
-			if (index < 0 || index >= accountCount)
-				throw new Error('Invalid index');
+			if (index < 0 || index >= accountCount) throw new Error('Invalid index');
 			return derivePrivateKey(index);
 		},
 
@@ -215,8 +212,7 @@ export function createBurnerWalletStore(
 
 		getAddress(index: number) {
 			if (!mnemonic) throw new Error('No wallet created');
-			if (index < 0 || index >= accountCount)
-				throw new Error('Invalid index');
+			if (index < 0 || index >= accountCount) throw new Error('Invalid index');
 			return getCachedAddress(index);
 		},
 	};

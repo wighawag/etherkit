@@ -1,7 +1,10 @@
 import type {EIP1193Provider} from 'eip-1193';
 import {createBurnerWalletProvider} from './provider.js';
 import {createBurnerWalletStore} from './store.js';
-import type {BurnerWalletStore, CreateBurnerWalletStoreOptions} from './types.js';
+import type {
+	BurnerWalletStore,
+	CreateBurnerWalletStoreOptions,
+} from './types.js';
 import {
 	announceBurnerWallet,
 	type AnnounceBurnerWalletOptions,
@@ -32,7 +35,7 @@ export type BurnerWalletInstance = {
  * ```
  */
 export function initBurnerWallet(
-	options: InitBurnerWalletOptions
+	options: InitBurnerWalletOptions,
 ): BurnerWalletInstance {
 	const store = createBurnerWalletStore({
 		storagePrefix: options.storagePrefix,

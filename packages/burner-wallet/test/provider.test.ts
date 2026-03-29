@@ -117,7 +117,7 @@ describe('createBurnerWalletProvider', () => {
 		// The subscribe mechanism causes an initial emit, plus the creation emit
 		expect(listener).toHaveBeenCalled();
 		expect(listener).toHaveBeenCalledWith(
-			expect.arrayContaining([expect.stringMatching(/^0x/)])
+			expect.arrayContaining([expect.stringMatching(/^0x/)]),
 		);
 	});
 
@@ -137,7 +137,7 @@ describe('createBurnerWalletProvider', () => {
 
 		expect(listener).toHaveBeenCalledTimes(1);
 		expect(listener).toHaveBeenCalledWith(
-			expect.arrayContaining([expect.stringMatching(/^0x/)])
+			expect.arrayContaining([expect.stringMatching(/^0x/)]),
 		);
 	});
 
@@ -231,9 +231,7 @@ describe('createBurnerWalletProvider', () => {
 
 		// The selected account should be first
 		expect(accounts).toHaveLength(3);
-		expect((accounts as string[])[0]).toBe(
-			walletStore.get().selectedAddress
-		);
+		expect((accounts as string[])[0]).toBe(walletStore.get().selectedAddress);
 	});
 
 	it('emits accountsChanged when selected account changes', async () => {
