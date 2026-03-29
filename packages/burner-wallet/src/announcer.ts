@@ -62,12 +62,13 @@ export function announceBurnerWallet(
 	options?: AnnounceBurnerWalletOptions
 ): () => void {
 	const storagePrefix = options?.storagePrefix ?? 'burner-wallet:';
-	const info: EIP6963ProviderInfo = {
+	// Freeze info to prevent mutation by consumers (EIP-6963 spec-compliant)
+	const info: EIP6963ProviderInfo = Object.freeze({
 		uuid: options?.uuid ?? getStableUUID(storagePrefix),
 		name: options?.name ?? 'Burner Wallet',
 		icon: options?.icon ?? BURNER_WALLET_ICON_DATA_URI,
 		rdns: options?.rdns ?? 'app.etherplay.burner-wallet',
-	};
+	});
 
 	const detail: EIP6963ProviderDetail = {
 		info,

@@ -155,7 +155,10 @@ export function createBurnerWalletProvider(
 		},
 	} as unknown as EIP1193Provider;
 
-	// Emit connect event asynchronously after creation
+	// Emit connect event asynchronously after creation.
+	// Note: This makes a real HTTP request to nodeURL (eth_chainId) immediately
+	// after provider creation, before the user calls eth_requestAccounts.
+	// Connection failures are silently swallowed - no connect event is emitted.
 	setTimeout(() => {
 		provider
 			.request({method: 'eth_chainId'})

@@ -20,6 +20,12 @@ export function createBurnerWalletStore(
 	let accountCount = 0;
 	let selectedIndex = 0;
 
+	// Cache for derived addresses to avoid re-deriving on every buildState() call.
+	// Key: address index, Value: derived address
+	// Invalidated when mnemonic changes.
+	let cachedMnemonic: string | null = null;
+	const addressCache = new Map<number, Hex>();
+
 	// Load from localStorage on init
 	function load() {
 		try {
@@ -55,10 +61,28 @@ export function createBurnerWalletStore(
 		}
 	}
 
-	function deriveAddress(index: number): Hex {
+	/**
+	 * Gets a cached address or derives and caches it.
+	 * Invalidates cache if mnemonic has changed.
+	 */
+	function getCachedAddress(index: number): Hex {
 		if (!mnemonic) throw new Error('No wallet created');
+
+		// Invalidate cache if mnemonic changed
+		if (cachedMnemonic !== mnemonic) {
+			addressCache.clear();
+			cachedMnemonic = mnemonic;
+		}
+
+		const cached = addressCache.get(index);
+		if (cached) {
+			return cached;
+		}
+
 		const account = mnemonicToAccount(mnemonic, {addressIndex: index});
-		return account.address as Hex;
+		const address = account.address as Hex;
+		addressCache.set(index, address);
+		return address;
 	}
 
 	/**
@@ -83,7 +107,7 @@ export function createBurnerWalletStore(
 		const addresses: Hex[] = [];
 		if (mnemonic) {
 			for (let i = 0; i < accountCount; i++) {
-				addresses.push(deriveAddress(i));
+				addresses.push(getCachedAddress(i));
 			}
 		}
 
@@ -193,7 +217,7 @@ export function createBurnerWalletStore(
 			if (!mnemonic) throw new Error('No wallet created');
 			if (index < 0 || index >= accountCount)
 				throw new Error('Invalid index');
-			return deriveAddress(index);
+			return getCachedAddress(index);
 		},
 	};
 }
