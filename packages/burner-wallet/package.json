@@ -1,6 +1,6 @@
 {
 	"name": "@etherkit/burner-wallet",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "EIP-6963 burner wallet provider for development and testing - generates ephemeral keys stored in localStorage",
 	"keywords": [
 		"ethereum",
@@ -55,6 +55,9 @@
 		"typescript": "^5.3.3",
 		"viem": "^2.41.2",
 		"vitest": "^4.0.18"
+	},
+	"peerDependencies": {
+		"viem": "^2.0.0"
 	},
 	"scripts": {
 		"format": "prettier --write .",
