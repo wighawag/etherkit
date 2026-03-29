@@ -23,9 +23,6 @@ importers:
       remote-procedure-call:
         specifier: ^0.1.0
         version: 0.1.1(@types/node@25.3.3)(jsdom@29.0.1(@noble/hashes@1.8.0))
-      viem:
-        specifier: ^2.41.2
-        version: 2.46.3(typescript@5.9.3)
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^4.0.18
@@ -42,6 +39,9 @@ importers:
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
+      viem:
+        specifier: ^2.41.2
+        version: 2.46.3(typescript@5.9.3)
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@25.3.3)(jsdom@29.0.1(@noble/hashes@1.8.0))
