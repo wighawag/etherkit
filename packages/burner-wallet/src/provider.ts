@@ -99,18 +99,16 @@ export function createBurnerWalletProvider(
 	// ==================== Inner Provider ====================
 	function buildInner(): EIP1193ProviderWithoutEvents {
 		const rpcProvider = createCurriedJSONRPC(nodeURL);
-		if (!mnemonic) {
-			// No mnemonic yet - return bare RPC provider
-			return rpcProvider as unknown as EIP1193ProviderWithoutEvents;
-		}
 		return extendProviderWithAccounts(
 			rpcProvider as unknown as EIP1193ProviderWithoutEvents,
-			{
-				accounts: {
-					mnemonic,
-					numAccounts: ACCOUNT_COUNT,
-				},
-			},
+			mnemonic
+				? {
+						accounts: {
+							mnemonic,
+							numAccounts: ACCOUNT_COUNT,
+						},
+					}
+				: undefined,
 		);
 	}
 
