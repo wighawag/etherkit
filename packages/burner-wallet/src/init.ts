@@ -1,10 +1,8 @@
+// packages/burner-wallet/src/init.ts
+
 import type {EIP1193Provider} from 'eip-1193';
 import {createBurnerWalletProvider} from './provider.js';
-import {createBurnerWalletStore} from './store.js';
-import type {
-	BurnerWalletStore,
-	CreateBurnerWalletStoreOptions,
-} from './types.js';
+import type {BurnerWalletManager} from './types.js';
 import {
 	announceBurnerWallet,
 	type AnnounceBurnerWalletOptions,
@@ -13,12 +11,13 @@ import {
 export type InitBurnerWalletOptions = {
 	/** Ethereum JSON-RPC endpoint URL */
 	nodeURL: string;
-} & CreateBurnerWalletStoreOptions &
-	AnnounceBurnerWalletOptions;
+	/** localStorage key prefix (default: 'burner-wallet:') */
+	storagePrefix?: string;
+} & AnnounceBurnerWalletOptions;
 
 export type BurnerWalletInstance = {
 	provider: EIP1193Provider;
-	store: BurnerWalletStore;
+	walletManager: BurnerWalletManager;
 	cleanup: () => void;
 };
 
@@ -37,20 +36,20 @@ export type BurnerWalletInstance = {
 export function initBurnerWallet(
 	options: InitBurnerWalletOptions,
 ): BurnerWalletInstance {
-	const store = createBurnerWalletStore({
-		storagePrefix: options.storagePrefix,
-	});
-
-	const {provider, cleanup: providerCleanup} = createBurnerWalletProvider({
+	const {
+		provider,
+		walletManager,
+		cleanup: providerCleanup,
+	} = createBurnerWalletProvider({
 		nodeURL: options.nodeURL,
-		store,
+		storagePrefix: options.storagePrefix,
 	});
 
 	const announcerCleanup = announceBurnerWallet(provider, options);
 
 	return {
 		provider,
-		store,
+		walletManager,
 		cleanup: () => {
 			announcerCleanup();
 			providerCleanup();

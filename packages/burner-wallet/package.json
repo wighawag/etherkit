@@ -56,9 +56,6 @@
 		"viem": "^2.41.2",
 		"vitest": "^4.0.18"
 	},
-	"peerDependencies": {
-		"viem": "^2.0.0"
-	},
 	"scripts": {
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
