@@ -55,20 +55,50 @@ export function createBurnerWalletProvider(
 		});
 	}
 
-	let inner = buildProvider();
-	let lastAddresses: string[] = store.get().addresses;
+	/**
+	 * Returns addresses ordered with selectedAddress first, per EIP-1193 convention.
+	 * Most dapps expect accounts[0] to be the active account.
+	 */
+	function getOrderedAddresses(state: {
+		addresses: string[];
+		selectedIndex: number;
+	}): string[] {
+		if (state.addresses.length === 0) return [];
+		const addresses = [...state.addresses];
+		const selectedIndex = state.selectedIndex;
+		if (selectedIndex > 0 && selectedIndex < addresses.length) {
+			// Move selected address to front
+			const [selected] = addresses.splice(selectedIndex, 1);
+			addresses.unshift(selected);
+		}
+		return addresses;
+	}
 
-	// Subscribe to store changes - only rebuild when addresses change
+	let inner = buildProvider();
+	let lastState = store.get();
+	let lastOrderedAddresses = getOrderedAddresses(lastState);
+
+	// Subscribe to store changes - rebuild when addresses change, emit when order changes
 	store.subscribe((state) => {
 		const addressesChanged =
-			state.addresses.length !== lastAddresses.length ||
-			state.addresses.some((addr, i) => addr !== lastAddresses[i]);
+			state.addresses.length !== lastState.addresses.length ||
+			state.addresses.some((addr, i) => addr !== lastState.addresses[i]);
+
+		const orderedAddresses = getOrderedAddresses(state);
+		const orderChanged =
+			orderedAddresses.length !== lastOrderedAddresses.length ||
+			orderedAddresses.some((addr, i) => addr !== lastOrderedAddresses[i]);
 
 		if (addressesChanged) {
-			lastAddresses = state.addresses;
 			inner = buildProvider();
-			emit('accountsChanged', state.addresses);
 		}
+
+		if (orderChanged) {
+			emit('accountsChanged', orderedAddresses);
+		}
+
+		lastState = state;
+		lastOrderedAddresses = orderedAddresses;
 	});
 
 	const request = async (args: {
@@ -82,7 +112,7 @@ export function createBurnerWalletProvider(
 				store.createWallet();
 				// After createWallet, the store subscription will rebuild the provider
 			}
-			return store.get().addresses;
+			return getOrderedAddresses(store.get());
 		}
 
 		return (inner as EIP1193ProviderWithoutEvents).request(args as any);

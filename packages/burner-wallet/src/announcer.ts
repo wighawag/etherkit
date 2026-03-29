@@ -20,14 +20,32 @@ function generateUUID(): string {
 		return crypto.randomUUID();
 	}
 	// Fallback for environments without crypto.randomUUID
-	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-		/[xy]/g,
-		(c) => {
-			const r = (Math.random() * 16) | 0;
-			const v = c === 'x' ? r : (r & 0x3) | 0x8;
-			return v.toString(16);
+	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+		const r = (Math.random() * 16) | 0;
+		const v = c === 'x' ? r : (r & 0x3) | 0x8;
+		return v.toString(16);
+	});
+}
+
+/**
+ * Returns a stable UUID for this session/origin.
+ * Per EIP-6963, UUID "SHOULD" be stable across a session to avoid
+ * confusing aggregators that cache by UUID.
+ */
+function getStableUUID(storagePrefix: string): string {
+	const key = storagePrefix + 'eip6963-uuid';
+	try {
+		const stored = localStorage.getItem(key);
+		if (stored) {
+			return stored;
 		}
-	);
+		const newUUID = generateUUID();
+		localStorage.setItem(key, newUUID);
+		return newUUID;
+	} catch {
+		// localStorage unavailable, fall back to session-unstable UUID
+		return generateUUID();
+	}
 }
 
 export type AnnounceBurnerWalletOptions = {
@@ -35,14 +53,17 @@ export type AnnounceBurnerWalletOptions = {
 	icon?: string;
 	rdns?: string;
 	uuid?: string;
+	/** Storage prefix for persisting UUID. Defaults to 'burner-wallet:' */
+	storagePrefix?: string;
 };
 
 export function announceBurnerWallet(
 	provider: EIP1193Provider,
 	options?: AnnounceBurnerWalletOptions
 ): () => void {
+	const storagePrefix = options?.storagePrefix ?? 'burner-wallet:';
 	const info: EIP6963ProviderInfo = {
-		uuid: options?.uuid ?? generateUUID(),
+		uuid: options?.uuid ?? getStableUUID(storagePrefix),
 		name: options?.name ?? 'Burner Wallet',
 		icon: options?.icon ?? BURNER_WALLET_ICON_DATA_URI,
 		rdns: options?.rdns ?? 'app.etherplay.burner-wallet',

@@ -1,5 +1,6 @@
 // packages/burner-wallet/src/store.ts
 
+import {toHex} from 'viem';
 import {generateMnemonic, mnemonicToAccount, english} from 'viem/accounts';
 import type {
 	Hex,
@@ -67,11 +68,7 @@ export function createBurnerWalletStore(
 		if (!hdKey.privateKey) {
 			throw new Error('Failed to derive private key');
 		}
-		// Convert Uint8Array to hex string
-		const hexKey = Array.from(hdKey.privateKey)
-			.map((b) => b.toString(16).padStart(2, '0'))
-			.join('');
-		return `0x${hexKey}` as Hex;
+		return toHex(hdKey.privateKey) as Hex;
 	}
 
 	function buildState(): BurnerWalletState {
@@ -109,14 +106,6 @@ export function createBurnerWalletStore(
 
 	// Initialize
 	load();
-
-	// Log warning
-	if (typeof console !== 'undefined') {
-		console.warn(
-			'[BurnerWalletStore] Mnemonic stored in localStorage (plain text). ' +
-				'For development/testing only. Do not use with real funds.'
-		);
-	}
 
 	return {
 		subscribe(listener) {

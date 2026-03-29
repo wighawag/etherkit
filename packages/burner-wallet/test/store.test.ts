@@ -84,6 +84,30 @@ describe('BurnerWalletStore', () => {
 			walletStore.importMnemonic(mnemonic);
 			expect(walletStore.get().accountCount).toBe(1);
 		});
+
+		it('throws for invalid/garbage mnemonic', () => {
+			const walletStore = createBurnerWalletStore();
+			expect(() =>
+				walletStore.importMnemonic('not a valid mnemonic phrase at all')
+			).toThrow();
+		});
+
+		it('throws for empty mnemonic', () => {
+			const walletStore = createBurnerWalletStore();
+			expect(() => walletStore.importMnemonic('')).toThrow();
+		});
+
+		it('does not update state when mnemonic is invalid', () => {
+			const walletStore = createBurnerWalletStore();
+			const originalMnemonic = walletStore.createWallet();
+
+			expect(() =>
+				walletStore.importMnemonic('garbage words here')
+			).toThrow();
+
+			// Original mnemonic should still be in place
+			expect(walletStore.getMnemonic()).toBe(originalMnemonic);
+		});
 	});
 
 	describe('addAccount', () => {

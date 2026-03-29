@@ -154,4 +154,83 @@ describe('createBurnerWalletProvider', () => {
 		});
 		expect(accounts).toHaveLength(3);
 	});
+
+	it('auto-creates wallet after clearAll', async () => {
+		const walletStore = createBurnerWalletStore();
+		walletStore.createWallet();
+		const originalAddress = walletStore.get().addresses[0];
+
+		const provider = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			store: walletStore,
+		});
+
+		// Clear all data
+		walletStore.clearAll();
+		expect(walletStore.get().accountCount).toBe(0);
+		expect(walletStore.get().addresses).toEqual([]);
+
+		// eth_requestAccounts should auto-create a new wallet
+		const accounts = await provider.request({
+			method: 'eth_requestAccounts',
+		});
+
+		expect(accounts).toHaveLength(1);
+		expect((accounts as string[])[0]).toMatch(/^0x[0-9a-fA-F]{40}$/);
+		expect(walletStore.get().accountCount).toBe(1);
+		// New mnemonic should generate different address
+		expect((accounts as string[])[0]).not.toBe(originalAddress);
+	});
+
+	it('returns selected address first in eth_requestAccounts', async () => {
+		const walletStore = createBurnerWalletStore();
+		walletStore.createWallet();
+		walletStore.addAccount();
+		walletStore.addAccount();
+
+		const provider = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			store: walletStore,
+		});
+
+		// Select the second account (index 1)
+		walletStore.selectAccount(1);
+
+		const accounts = await provider.request({
+			method: 'eth_requestAccounts',
+		});
+
+		// The selected account should be first
+		expect(accounts).toHaveLength(3);
+		expect((accounts as string[])[0]).toBe(
+			walletStore.get().selectedAddress
+		);
+	});
+
+	it('emits accountsChanged when selected account changes', async () => {
+		const walletStore = createBurnerWalletStore();
+		walletStore.createWallet();
+		walletStore.addAccount();
+		walletStore.addAccount();
+		// addAccount auto-selects the new account, so selectedIndex is now 2
+		// Reset to account 0 to establish baseline
+		walletStore.selectAccount(0);
+
+		const provider = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			store: walletStore,
+		});
+
+		const listener = vi.fn();
+		provider.on('accountsChanged', listener);
+		listener.mockClear();
+
+		// Change selected account from 0 to 2
+		walletStore.selectAccount(2);
+
+		expect(listener).toHaveBeenCalledTimes(1);
+		// First account in the emitted array should be the selected one
+		const emittedAccounts = listener.mock.calls[0][0] as string[];
+		expect(emittedAccounts[0]).toBe(walletStore.get().selectedAddress);
+	});
 });
