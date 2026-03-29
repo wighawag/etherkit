@@ -155,10 +155,8 @@ export function createBurnerWalletStore(
 
 		selectAccount(index: number) {
 			ensureWallet();
-			if (index < 0) throw new Error('Invalid index');
-			// Auto-expand accounts if selecting beyond current count
-			if (index >= accountCount) {
-				accountCount = index + 1;
+			if (index < 0 || index >= accountCount) {
+				throw new Error('Invalid index');
 			}
 			selectedIndex = index;
 			save();

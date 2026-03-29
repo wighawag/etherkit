@@ -159,12 +159,12 @@ describe('BurnerWalletStore', () => {
 			expect(walletStore.get().selectedIndex).toBe(1);
 		});
 
-		it('auto-expands account count if selecting beyond', () => {
+		it('throws for index beyond account count', () => {
 			const walletStore = createBurnerWalletStore();
 			walletStore.createWallet();
-			walletStore.selectAccount(5);
-			expect(walletStore.get().accountCount).toBe(6);
-			expect(walletStore.get().selectedIndex).toBe(5);
+			expect(() => walletStore.selectAccount(5)).toThrow('Invalid index');
+			// Account count should remain unchanged
+			expect(walletStore.get().accountCount).toBe(1);
 		});
 
 		it('throws for negative index', () => {
