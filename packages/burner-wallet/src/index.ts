@@ -8,7 +8,10 @@ export type {
 	CreateBurnerWalletStoreOptions,
 } from './types.js';
 export {createBurnerWalletProvider} from './provider.js';
-export type {BurnerWalletProviderOptions} from './provider.js';
+export type {
+	BurnerWalletProviderOptions,
+	BurnerWalletProviderResult,
+} from './provider.js';
 export {BURNER_WALLET_SVG, BURNER_WALLET_ICON_DATA_URI} from './icon.js';
 export {announceBurnerWallet} from './announcer.js';
 export type {

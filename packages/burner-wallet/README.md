@@ -7,10 +7,12 @@ EIP-6963 burner wallet provider for Ethereum development and testing. Uses a mne
 ## Installation
 
 ```bash
-npm install @etherkit/burner-wallet
+npm install @etherkit/burner-wallet viem
 # or
-pnpm add @etherkit/burner-wallet
+pnpm add @etherkit/burner-wallet viem
 ```
+
+> **Note:** `viem` is a peer dependency and must be installed alongside this package.
 
 ## Quick Start
 
@@ -112,14 +114,19 @@ Creates an EIP-1193 provider using an existing store.
 import {createBurnerWalletStore, createBurnerWalletProvider} from '@etherkit/burner-wallet';
 
 const store = createBurnerWalletStore();
-const provider = createBurnerWalletProvider({
+const {provider, cleanup} = createBurnerWalletProvider({
   nodeURL: 'http://localhost:8545',
   store,
 });
 
 // Use as a standard EIP-1193 provider
 const accounts = await provider.request({method: 'eth_requestAccounts'});
+
+// When done, clean up the store subscription
+cleanup();
 ```
+
+**Returns:** `{ provider, cleanup }` - Provider instance and cleanup function to unsubscribe from store updates.
 
 - `eth_requestAccounts` auto-creates a wallet if none exists
 - Emits `accountsChanged` when store state changes
