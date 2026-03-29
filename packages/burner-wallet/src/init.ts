@@ -38,16 +38,19 @@ export function initBurnerWallet(
 		storagePrefix: options.storagePrefix,
 	});
 
-	const provider = createBurnerWalletProvider({
+	const {provider, cleanup: providerCleanup} = createBurnerWalletProvider({
 		nodeURL: options.nodeURL,
 		store,
 	});
 
-	const cleanup = announceBurnerWallet(provider, options);
+	const announcerCleanup = announceBurnerWallet(provider, options);
 
 	return {
 		provider,
 		store,
-		cleanup,
+		cleanup: () => {
+			announcerCleanup();
+			providerCleanup();
+		},
 	};
 }

@@ -32,7 +32,7 @@ describe('createBurnerWalletProvider', () => {
 
 	it('returns a provider with standard methods', () => {
 		const walletStore = createBurnerWalletStore();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -42,9 +42,38 @@ describe('createBurnerWalletProvider', () => {
 		expect(provider.removeListener).toBeTypeOf('function');
 	});
 
+	it('returns cleanup function', () => {
+		const walletStore = createBurnerWalletStore();
+		const {cleanup} = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			store: walletStore,
+		});
+		expect(cleanup).toBeTypeOf('function');
+	});
+
+	it('cleanup unsubscribes from store', () => {
+		const walletStore = createBurnerWalletStore();
+		walletStore.createWallet();
+		const {provider, cleanup} = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			store: walletStore,
+		});
+
+		const listener = vi.fn();
+		provider.on('accountsChanged', listener);
+		listener.mockClear();
+
+		// Cleanup should unsubscribe from store
+		cleanup();
+
+		// Adding account should NOT emit accountsChanged after cleanup
+		walletStore.addAccount();
+		expect(listener).not.toHaveBeenCalled();
+	});
+
 	it('eth_requestAccounts creates account if none exist', async () => {
 		const walletStore = createBurnerWalletStore();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -61,7 +90,7 @@ describe('createBurnerWalletProvider', () => {
 	it('eth_requestAccounts does not create extra accounts if one exists', async () => {
 		const walletStore = createBurnerWalletStore();
 		walletStore.createWallet();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -75,7 +104,7 @@ describe('createBurnerWalletProvider', () => {
 
 	it('emits accountsChanged when eth_requestAccounts creates account', async () => {
 		const walletStore = createBurnerWalletStore();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -95,7 +124,7 @@ describe('createBurnerWalletProvider', () => {
 	it('emits accountsChanged when store changes', async () => {
 		const walletStore = createBurnerWalletStore();
 		walletStore.createWallet();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -114,7 +143,7 @@ describe('createBurnerWalletProvider', () => {
 
 	it('on returns the provider for chaining', () => {
 		const walletStore = createBurnerWalletStore();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -124,7 +153,7 @@ describe('createBurnerWalletProvider', () => {
 
 	it('removeListener stops notifications', async () => {
 		const walletStore = createBurnerWalletStore();
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -144,7 +173,7 @@ describe('createBurnerWalletProvider', () => {
 		walletStore.addAccount();
 		walletStore.addAccount();
 
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -160,7 +189,7 @@ describe('createBurnerWalletProvider', () => {
 		walletStore.createWallet();
 		const originalAddress = walletStore.get().addresses[0];
 
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -188,7 +217,7 @@ describe('createBurnerWalletProvider', () => {
 		walletStore.addAccount();
 		walletStore.addAccount();
 
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});
@@ -216,7 +245,7 @@ describe('createBurnerWalletProvider', () => {
 		// Reset to account 0 to establish baseline
 		walletStore.selectAccount(0);
 
-		const provider = createBurnerWalletProvider({
+		const {provider} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			store: walletStore,
 		});

@@ -61,6 +61,14 @@ export function createBurnerWalletStore(
 		return account.address as Hex;
 	}
 
+	/**
+	 * Derives the private key for an account at the given index.
+	 *
+	 * Note: account.getHdKey() is used here but may not be guaranteed stable
+	 * across viem major versions. If this breaks in a future viem update,
+	 * consider using hdKeyToAccount which exposes privateKey directly.
+	 * @see https://viem.sh/docs/accounts/hd.html
+	 */
 	function derivePrivateKey(index: number): Hex {
 		if (!mnemonic) throw new Error('No wallet created');
 		const account = mnemonicToAccount(mnemonic, {addressIndex: index});

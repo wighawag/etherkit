@@ -31,9 +31,15 @@ type EventListener =
 	| ((error: EIP1193ProviderRpcError) => unknown)
 	| ((message: EIP1193Message) => unknown);
 
+export type BurnerWalletProviderResult = {
+	provider: EIP1193Provider;
+	/** Cleanup function to unsubscribe from store updates */
+	cleanup: () => void;
+};
+
 export function createBurnerWalletProvider(
 	options: BurnerWalletProviderOptions
-): EIP1193Provider {
+): BurnerWalletProviderResult {
 	const {nodeURL, store} = options;
 	const listeners = new Map<EventName, Set<EventListener>>();
 
@@ -46,6 +52,13 @@ export function createBurnerWalletProvider(
 		}
 	}
 
+	/**
+	 * Builds a new inner provider with current private keys.
+	 *
+	 * Note: Keys are captured at rebuild time (snapshot), not lazily.
+	 * This is intentional - inner is rebuilt on every store address change,
+	 * so keys always reflect the current state when needed.
+	 */
 	function buildProvider(): EIP1193ProviderWithoutEvents {
 		const rpcProvider = createCurriedJSONRPC<Methods>(nodeURL);
 		return extendProviderWithAccounts(rpcProvider, {
@@ -78,8 +91,11 @@ export function createBurnerWalletProvider(
 	let lastState = store.get();
 	let lastOrderedAddresses = getOrderedAddresses(lastState);
 
-	// Subscribe to store changes - rebuild when addresses change, emit when order changes
-	store.subscribe((state) => {
+	// Subscribe to store changes - rebuild when addresses change, emit when order changes.
+	// Note: subscribe() fires immediately with current state (Svelte store convention).
+	// This means lastState is set to the same state just before, so the initial
+	// callback won't cause a spurious rebuild or emit.
+	const unsubscribe = store.subscribe((state) => {
 		const addressesChanged =
 			state.addresses.length !== lastState.addresses.length ||
 			state.addresses.some((addr, i) => addr !== lastState.addresses[i]);
@@ -151,5 +167,8 @@ export function createBurnerWalletProvider(
 			});
 	}, 0);
 
-	return provider;
+	return {
+		provider,
+		cleanup: unsubscribe,
+	};
 }

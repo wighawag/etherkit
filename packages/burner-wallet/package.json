@@ -45,8 +45,7 @@
 	"dependencies": {
 		"eip-1193": "^0.6.5",
 		"eip-1193-accounts-wrapper": "^0.0.12",
-		"remote-procedure-call": "^0.1.0",
-		"viem": "^2.41.2"
+		"remote-procedure-call": "^0.1.0"
 	},
 	"devDependencies": {
 		"@vitest/coverage-v8": "^4.0.18",
@@ -54,7 +53,11 @@
 		"jsdom": "^29.0.1",
 		"prettier": "^3.8.0",
 		"typescript": "^5.3.3",
+		"viem": "^2.41.2",
 		"vitest": "^4.0.18"
+	},
+	"peerDependencies": {
+		"viem": "^2.0.0"
 	},
 	"scripts": {
 		"format": "prettier --write .",
