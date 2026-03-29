@@ -1,0 +1,72 @@
+{
+	"name": "@etherkit/burner-wallet",
+	"version": "0.0.0",
+	"description": "EIP-6963 burner wallet provider for development and testing - generates ephemeral keys stored in localStorage",
+	"keywords": [
+		"ethereum",
+		"burner-wallet",
+		"eip-6963",
+		"eip-1193",
+		"wallet",
+		"development",
+		"testing",
+		"web3",
+		"typescript"
+	],
+	"license": "MIT",
+	"author": "Ronan Sandford",
+	"homepage": "https://github.com/wighawag/etherkit#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/wighawag/etherkit.git",
+		"directory": "packages/burner-wallet"
+	},
+	"bugs": {
+		"url": "https://github.com/wighawag/etherkit/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"type": "module",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"sideEffects": false,
+	"dependencies": {
+		"eip-1193": "^0.6.5",
+		"eip-1193-accounts-wrapper": "^0.0.12",
+		"remote-procedure-call": "^0.1.0"
+	},
+	"devDependencies": {
+		"@vitest/coverage-v8": "^4.0.18",
+		"as-soon": "^0.1.5",
+		"jsdom": "^29.0.1",
+		"prettier": "^3.8.0",
+		"typescript": "^5.3.3",
+		"viem": "^2.41.2",
+		"vitest": "^4.0.18"
+	},
+	"peerDependencies": {
+		"viem": "^2.0.0"
+	},
+	"scripts": {
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"build": "tsc",
+		"dev": "as-soon -w src pnpm build",
+		"typecheck": "tsc --noEmit -p tsconfig-check.json",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage"
+	}
+}

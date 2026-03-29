@@ -1,7 +1,7 @@
 ---
 id: TASK-n4kfy
 title: Implement BurnerWalletProvider with event support
-status: draft
+status: done
 priority: high
 type: feature
 effort: small

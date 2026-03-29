@@ -1,7 +1,7 @@
 ---
 id: TASK-rg8ru
 title: Implement BurnerKeyStorage for key generation and persistence
-status: draft
+status: done
 priority: high
 type: feature
 effort: small

@@ -1,7 +1,7 @@
 ---
 id: TASK-5hxm2
 title: Set up @etherkit/burner-wallet package structure
-status: draft
+status: done
 priority: high
 type: feature
 effort: small

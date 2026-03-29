@@ -1,7 +1,7 @@
 ---
 id: TASK-ed45v
 title: Document burner wallet package API and usage
-status: draft
+status: done
 priority: medium
 type: feature
 effort: small
