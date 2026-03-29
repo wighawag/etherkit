@@ -10,11 +10,11 @@ import type {
 } from 'eip-1193';
 import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {extendProviderWithAccounts} from 'eip-1193-accounts-wrapper';
-import {BurnerKeyStorage} from './storage.js';
+import type {BurnerWalletStore} from './types.js';
 
 export type BurnerWalletProviderOptions = {
 	nodeURL: string;
-	storageKey?: string;
+	store: BurnerWalletStore;
 };
 
 type EventName =
@@ -33,8 +33,8 @@ type EventListener =
 
 export function createBurnerWalletProvider(
 	options: BurnerWalletProviderOptions
-): EIP1193Provider & {storage: BurnerKeyStorage} {
-	const storage = new BurnerKeyStorage(options.storageKey);
+): EIP1193Provider {
+	const {nodeURL, store} = options;
 	const listeners = new Map<EventName, Set<EventListener>>();
 
 	function emit(eventName: EventName, data: unknown) {
@@ -47,39 +47,48 @@ export function createBurnerWalletProvider(
 	}
 
 	function buildProvider(): EIP1193ProviderWithoutEvents {
-		const rpcProvider = createCurriedJSONRPC<Methods>(options.nodeURL);
+		const rpcProvider = createCurriedJSONRPC<Methods>(nodeURL);
 		return extendProviderWithAccounts(rpcProvider, {
 			accounts: {
-				privateKeys: storage.getPrivateKeys(),
+				privateKeys: store.getPrivateKeys(),
 			},
 		});
 	}
 
 	let inner = buildProvider();
+	let lastAddresses: string[] = store.get().addresses;
 
-	function rebuildAndNotify() {
-		inner = buildProvider();
-		emit('accountsChanged', storage.getAddresses());
-	}
+	// Subscribe to store changes - only rebuild when addresses change
+	store.subscribe((state) => {
+		const addressesChanged =
+			state.addresses.length !== lastAddresses.length ||
+			state.addresses.some((addr, i) => addr !== lastAddresses[i]);
+
+		if (addressesChanged) {
+			lastAddresses = state.addresses;
+			inner = buildProvider();
+			emit('accountsChanged', state.addresses);
+		}
+	});
 
 	const request = async (args: {
 		method: string;
 		params?: readonly unknown[];
 	}) => {
 		if (args.method === 'eth_requestAccounts') {
-			if (storage.getPrivateKeys().length === 0) {
-				storage.createAccount();
-				rebuildAndNotify();
+			const state = store.get();
+			if (state.accountCount === 0) {
+				// Create a wallet with 1 account if none exists
+				store.createWallet();
+				// After createWallet, the store subscription will rebuild the provider
 			}
-			return storage.getAddresses();
+			return store.get().addresses;
 		}
 
 		return (inner as EIP1193ProviderWithoutEvents).request(args as any);
 	};
 
 	const provider = {
-		storage,
-
 		request,
 
 		on(eventName: string, listener: (...args: any[]) => any) {
@@ -98,7 +107,7 @@ export function createBurnerWalletProvider(
 			}
 			return provider;
 		},
-	} as unknown as EIP1193Provider & {storage: BurnerKeyStorage};
+	} as unknown as EIP1193Provider;
 
 	// Emit connect event asynchronously after creation
 	setTimeout(() => {

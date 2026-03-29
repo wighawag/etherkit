@@ -1,18 +1,21 @@
 import type {EIP1193Provider} from 'eip-1193';
 import {createBurnerWalletProvider} from './provider.js';
-import type {BurnerWalletProviderOptions} from './provider.js';
+import {createBurnerWalletStore} from './store.js';
+import type {BurnerWalletStore, CreateBurnerWalletStoreOptions} from './types.js';
 import {
 	announceBurnerWallet,
 	type AnnounceBurnerWalletOptions,
 } from './announcer.js';
-import type {BurnerKeyStorage} from './storage.js';
 
-export type InitBurnerWalletOptions = BurnerWalletProviderOptions &
+export type InitBurnerWalletOptions = {
+	/** Ethereum JSON-RPC endpoint URL */
+	nodeURL: string;
+} & CreateBurnerWalletStoreOptions &
 	AnnounceBurnerWalletOptions;
 
 export type BurnerWalletInstance = {
 	provider: EIP1193Provider;
-	storage: BurnerKeyStorage;
+	store: BurnerWalletStore;
 	cleanup: () => void;
 };
 
@@ -31,12 +34,20 @@ export type BurnerWalletInstance = {
 export function initBurnerWallet(
 	options: InitBurnerWalletOptions
 ): BurnerWalletInstance {
-	const providerWithStorage = createBurnerWalletProvider(options);
-	const cleanup = announceBurnerWallet(providerWithStorage, options);
+	const store = createBurnerWalletStore({
+		storagePrefix: options.storagePrefix,
+	});
+
+	const provider = createBurnerWalletProvider({
+		nodeURL: options.nodeURL,
+		store,
+	});
+
+	const cleanup = announceBurnerWallet(provider, options);
 
 	return {
-		provider: providerWithStorage,
-		storage: providerWithStorage.storage,
+		provider,
+		store,
 		cleanup,
 	};
 }

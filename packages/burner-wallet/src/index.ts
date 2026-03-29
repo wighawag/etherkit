@@ -1,5 +1,12 @@
-export {BurnerKeyStorage} from './storage.js';
-export type {Hex} from './storage.js';
+// packages/burner-wallet/src/index.ts
+
+export {createBurnerWalletStore} from './store.js';
+export type {
+	Hex,
+	BurnerWalletState,
+	BurnerWalletStore,
+	CreateBurnerWalletStoreOptions,
+} from './types.js';
 export {createBurnerWalletProvider} from './provider.js';
 export type {BurnerWalletProviderOptions} from './provider.js';
 export {BURNER_WALLET_SVG, BURNER_WALLET_ICON_DATA_URI} from './icon.js';
