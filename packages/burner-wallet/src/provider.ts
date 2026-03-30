@@ -13,6 +13,7 @@ import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {
 	extendProviderWithAccounts,
 	generateMnemonic,
+	ProviderOptions,
 } from 'eip-1193-accounts-wrapper';
 import {english} from 'viem/accounts';
 import {
@@ -99,16 +100,34 @@ export function createBurnerWalletProvider(
 	// ==================== Inner Provider ====================
 	function buildInner(): EIP1193ProviderWithoutEvents {
 		const rpcProvider = createCurriedJSONRPC(nodeURL);
+
+		const options: ProviderOptions = {};
+
+		if (mnemonic) {
+			options.accounts = {
+				mnemonic,
+				numAccounts: ACCOUNT_COUNT,
+			};
+		}
+
+		// TODO, options to have a list of impersonated account, instead of mnemonic
+		// could also support both mnemonic and impersonated acounts
+		// options.impersonate = {
+		// 	impersonator: {
+		// 		impersonateAccount: async (params: {address: `0x${string}`}) => {
+		// 			await (rpcProvider as any).request({
+		// 				method: 'hardhat_impersonateAccount',
+		// 				params: [params.address],
+		// 			});
+		// 		},
+		// 	},
+		// 	mode: 'list',
+		// 	list: [],
+		// };
+
 		return extendProviderWithAccounts(
 			rpcProvider as unknown as EIP1193ProviderWithoutEvents,
-			mnemonic
-				? {
-						accounts: {
-							mnemonic,
-							numAccounts: ACCOUNT_COUNT,
-						},
-					}
-				: undefined,
+			options,
 		);
 	}
 
