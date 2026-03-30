@@ -1,5 +1,11 @@
 # @etherkit/burner-wallet
 
+## 0.0.5
+
+### Patch Changes
+
+- init can provide the impersonated addresses
+
 ## 0.0.4
 
 ### Patch Changes
