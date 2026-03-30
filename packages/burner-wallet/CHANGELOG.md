@@ -1,5 +1,11 @@
 # @etherkit/burner-wallet
 
+## 0.0.8
+
+### Patch Changes
+
+- update latest accounts wrapper
+
 ## 0.0.7
 
 ### Patch Changes
