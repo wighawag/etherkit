@@ -2,7 +2,7 @@
 
 import type {EIP1193Provider} from 'eip-1193';
 import {createBurnerWalletProvider} from './provider.js';
-import type {BurnerWalletManager} from './types.js';
+import type {BurnerWalletManager, Hex} from './types.js';
 import {
 	announceBurnerWallet,
 	type AnnounceBurnerWalletOptions,
@@ -13,6 +13,8 @@ export type InitBurnerWalletOptions = {
 	nodeURL: string;
 	/** localStorage key prefix (default: 'burner-wallet:') */
 	storagePrefix?: string;
+	/** List of addresses to impersonate - requires a node that supports hardhat_impersonateAccount */
+	impersonateAddresses?: Hex[];
 } & AnnounceBurnerWalletOptions;
 
 export type BurnerWalletInstance = {
@@ -43,6 +45,7 @@ export function initBurnerWallet(
 	} = createBurnerWalletProvider({
 		nodeURL: options.nodeURL,
 		storagePrefix: options.storagePrefix,
+		impersonateAddresses: options.impersonateAddresses,
 	});
 
 	const announcerCleanup = announceBurnerWallet(provider, options);
