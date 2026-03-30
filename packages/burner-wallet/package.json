@@ -1,6 +1,6 @@
 {
 	"name": "@etherkit/burner-wallet",
-	"version": "0.0.6",
+	"version": "0.0.7",
 	"description": "EIP-6963 burner wallet provider for development and testing - generates ephemeral keys stored in localStorage",
 	"keywords": [
 		"ethereum",

@@ -1,5 +1,11 @@
 # @etherkit/burner-wallet
 
+## 0.0.7
+
+### Patch Changes
+
+- ca76537: fix, also generate mnemonic on accessing eth_accounts, at least for now
+
 ## 0.0.6
 
 ### Patch Changes
