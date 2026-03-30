@@ -1,5 +1,11 @@
 # @etherkit/burner-wallet
 
+## 0.0.4
+
+### Patch Changes
+
+- edbe314: support impersonated accounts
+
 ## 0.0.3
 
 ### Patch Changes
