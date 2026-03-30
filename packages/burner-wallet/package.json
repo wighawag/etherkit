@@ -44,7 +44,7 @@
 	"sideEffects": false,
 	"dependencies": {
 		"eip-1193": "^0.6.5",
-		"eip-1193-accounts-wrapper": "^0.0.13",
+		"eip-1193-accounts-wrapper": "^0.1.0",
 		"remote-procedure-call": "^0.1.0"
 	},
 	"devDependencies": {

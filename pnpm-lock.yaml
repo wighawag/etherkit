@@ -18,8 +18,8 @@ importers:
         specifier: ^0.6.5
         version: 0.6.5
       eip-1193-accounts-wrapper:
-        specifier: ^0.0.13
-        version: 0.0.13(typescript@5.9.3)
+        specifier: ^0.1.0
+        version: 0.1.0(typescript@5.9.3)
       remote-procedure-call:
         specifier: ^0.1.0
         version: 0.1.1(@types/node@25.3.3)(jsdom@29.0.1(@noble/hashes@1.8.0))
@@ -1039,8 +1039,8 @@ packages:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
 
-  eip-1193-accounts-wrapper@0.0.13:
-    resolution: {integrity: sha512-gYDujQFnyz6583WVNTm4OE356uRYH/B7WusiMcZrZeavqudPRWD0PxC0wpsOWR5pKw3zZVqzh1/BvyEyWMoQgg==}
+  eip-1193-accounts-wrapper@0.1.0:
+    resolution: {integrity: sha512-j4eoCGnJsSWkFdwrq7TNQ7wZyS2RSdLJ/0YTHr2T8eFNuYtuHra3r48CIjUsu1PHRZqFV1ZuNeofdNSFsfNkEA==}
 
   eip-1193@0.6.5:
     resolution: {integrity: sha512-KXCSdjFLIT5/06rMD2pMqoAZhZcTg4EofiCI70ovIOy8L/6twGJFE+RtW89S/hMFKDoNEGJ/WK8jQv7CpuGDgg==}
@@ -2635,7 +2635,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  eip-1193-accounts-wrapper@0.0.13(typescript@5.9.3):
+  eip-1193-accounts-wrapper@0.1.0(typescript@5.9.3):
     dependencies:
       named-logs: 0.4.1
       viem: 2.46.3(typescript@5.9.3)

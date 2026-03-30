@@ -1,6 +1,6 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import {createBurnerWalletProvider} from '../src/provider.js';
-import {ACCOUNT_COUNT} from '../src/types.js';
+import {ACCOUNT_COUNT, type Hex} from '../src/types.js';
 
 // Mock localStorage
 const store: Record<string, string> = {};
@@ -59,7 +59,7 @@ describe('createBurnerWalletProvider', () => {
 		expect(cleanup).toBeTypeOf('function');
 	});
 
-	it('cleanup clears event listeners', () => {
+	it('cleanup clears event listeners', async () => {
 		const {provider, walletManager, cleanup} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 		});
@@ -67,13 +67,19 @@ describe('createBurnerWalletProvider', () => {
 
 		const listener = vi.fn();
 		provider.on('accountsChanged', listener);
+
+		// Wait for initial event from createNew
+		await vi.waitFor(() => expect(listener).toHaveBeenCalled());
 		listener.mockClear();
 
 		// Cleanup should clear event listeners
 		cleanup();
 
+		// Get an account address to select
+		const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+
 		// Changing selection should NOT emit accountsChanged after cleanup
-		walletManager.selectAccount(1);
+		walletManager.selectAccount(accounts[1] as Hex);
 		expect(listener).not.toHaveBeenCalled();
 	});
 
@@ -203,8 +209,8 @@ describe('createBurnerWalletProvider', () => {
 			method: 'eth_accounts',
 		})) as string[];
 
-		// Select the third account (index 2)
-		walletManager.selectAccount(2);
+		// Select the third account by address
+		walletManager.selectAccount(allAccounts[2] as Hex);
 
 		const accounts = await provider.request({
 			method: 'eth_requestAccounts',
@@ -228,14 +234,18 @@ describe('createBurnerWalletProvider', () => {
 		await vi.waitFor(() => expect(listener).toHaveBeenCalled());
 		listener.mockClear();
 
-		// Change selected account from 0 to 2
-		walletManager.selectAccount(2);
+		// Get accounts to get an address to select
+		const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+
+		// Change selected account to third account
+		walletManager.selectAccount(accounts[2] as Hex);
 
 		// Wait for async event emission from selectAccount
 		await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1));
 		// First account in the emitted array should be the selected one
 		const emittedAccounts = listener.mock.calls[0][0] as string[];
 		expect(emittedAccounts).toHaveLength(ACCOUNT_COUNT);
+		expect(emittedAccounts[0]).toBe(accounts[2]);
 	});
 });
 
@@ -256,13 +266,13 @@ describe('walletManager', () => {
 			expect(mnemonic.split(' ')).toHaveLength(12);
 		});
 
-		it('sets selectedIndex to 0', () => {
+		it('sets selectedAddress to null', () => {
 			const {walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
 			});
 			walletManager.createNew();
 			const state = walletManager.get();
-			expect(state.selectedIndex).toBe(0);
+			expect(state.selectedAddress).toBeNull();
 		});
 
 		it('persists mnemonic to localStorage', () => {
@@ -273,10 +283,6 @@ describe('walletManager', () => {
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
 				'burner-wallet:mnemonic',
 				expect.any(String),
-			);
-			expect(localStorageMock.setItem).toHaveBeenCalledWith(
-				'burner-wallet:selected',
-				'0',
 			);
 		});
 	});
@@ -292,74 +298,66 @@ describe('walletManager', () => {
 			expect(walletManager.get().mnemonic).toBe(mnemonic);
 		});
 
-		it('resets selectedIndex to 0', () => {
-			const {walletManager} = createBurnerWalletProvider({
+		it('resets selectedAddress to null', async () => {
+			const {provider, walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
 			});
 			walletManager.createNew();
-			walletManager.selectAccount(5);
-			expect(walletManager.get().selectedIndex).toBe(5);
+
+			// Get accounts and select one
+			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			walletManager.selectAccount(accounts[5] as Hex);
+			expect(walletManager.get().selectedAddress).toBe(accounts[5]);
 
 			const mnemonic =
 				'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 			walletManager.importMnemonic(mnemonic);
-			expect(walletManager.get().selectedIndex).toBe(0);
+			expect(walletManager.get().selectedAddress).toBeNull();
 		});
 	});
 
 	describe('selectAccount', () => {
-		it('changes selected index', () => {
-			const {walletManager} = createBurnerWalletProvider({
+		it('changes selected address', async () => {
+			const {provider, walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
 			});
 			walletManager.createNew();
-			walletManager.selectAccount(5);
-			expect(walletManager.get().selectedIndex).toBe(5);
+
+			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			walletManager.selectAccount(accounts[5] as Hex);
+			expect(walletManager.get().selectedAddress).toBe(accounts[5]);
 		});
 
-		it('throws for index beyond ACCOUNT_COUNT', () => {
-			const {walletManager} = createBurnerWalletProvider({
-				nodeURL: 'http://localhost:8545',
-			});
-			walletManager.createNew();
-			expect(() => walletManager.selectAccount(15)).toThrow('Invalid index');
-		});
-
-		it('throws for negative index', () => {
-			const {walletManager} = createBurnerWalletProvider({
-				nodeURL: 'http://localhost:8545',
-			});
-			walletManager.createNew();
-			expect(() => walletManager.selectAccount(-1)).toThrow('Invalid index');
-		});
-
-		it('persists to localStorage', () => {
-			const {walletManager} = createBurnerWalletProvider({
+		it('persists to localStorage', async () => {
+			const {provider, walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
 			});
 			walletManager.createNew();
 			localStorageMock.setItem.mockClear();
 
-			walletManager.selectAccount(3);
+			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			walletManager.selectAccount(accounts[3] as Hex);
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
 				'burner-wallet:selected',
-				'3',
+				accounts[3],
 			);
 		});
 	});
 
 	describe('clearAll', () => {
-		it('resets all state', () => {
-			const {walletManager} = createBurnerWalletProvider({
+		it('resets all state', async () => {
+			const {provider, walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
 			});
 			walletManager.createNew();
-			walletManager.selectAccount(5);
+
+			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			walletManager.selectAccount(accounts[5] as Hex);
 			walletManager.clearAll();
 
 			const state = walletManager.get();
 			expect(state.mnemonic).toBeNull();
-			expect(state.selectedIndex).toBe(0);
+			expect(state.selectedAddress).toBeNull();
 		});
 
 		it('clears localStorage', () => {
@@ -375,15 +373,17 @@ describe('walletManager', () => {
 	});
 
 	describe('get', () => {
-		it('returns current state snapshot', () => {
-			const {walletManager} = createBurnerWalletProvider({
+		it('returns current state snapshot', async () => {
+			const {provider, walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
 			});
 			walletManager.createNew();
-			walletManager.selectAccount(3);
+
+			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			walletManager.selectAccount(accounts[3] as Hex);
 
 			const state = walletManager.get();
-			expect(state.selectedIndex).toBe(3);
+			expect(state.selectedAddress).toBe(accounts[3]);
 			expect(state.mnemonic).not.toBeNull();
 		});
 
@@ -393,17 +393,18 @@ describe('walletManager', () => {
 			});
 			const state = walletManager.get();
 			expect(state.mnemonic).toBeNull();
-			expect(state.selectedIndex).toBe(0);
+			expect(state.selectedAddress).toBeNull();
 		});
 	});
 
 	describe('localStorage persistence', () => {
-		it('loads state from localStorage on creation', () => {
+		it('loads state from localStorage on creation', async () => {
 			// Set up localStorage
 			const mnemonic =
 				'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+			const testAddress = '0x9858effd232b4033e47d90003d41ec34ecaeda94' as Hex;
 			store['burner-wallet:mnemonic'] = mnemonic;
-			store['burner-wallet:selected'] = '5';
+			store['burner-wallet:selected'] = testAddress;
 
 			const {walletManager} = createBurnerWalletProvider({
 				nodeURL: 'http://localhost:8545',
@@ -411,7 +412,7 @@ describe('walletManager', () => {
 			const state = walletManager.get();
 
 			expect(state.mnemonic).toBe(mnemonic);
-			expect(state.selectedIndex).toBe(5);
+			expect(state.selectedAddress).toBe(testAddress);
 		});
 
 		it('uses custom storage prefix', () => {
@@ -449,5 +450,90 @@ describe('walletManager', () => {
 				'0x9858effd232b4033e47d90003d41ec34ecaeda94'.toLowerCase(),
 			);
 		});
+	});
+});
+
+describe('impersonation', () => {
+	beforeEach(() => {
+		for (const key of Object.keys(store)) {
+			delete store[key];
+		}
+		vi.clearAllMocks();
+	});
+
+	it('accepts impersonateAddresses option', () => {
+		const impersonateAddresses: Hex[] = [
+			'0x1111111111111111111111111111111111111111',
+			'0x2222222222222222222222222222222222222222',
+		];
+
+		// Should not throw
+		const {provider} = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			impersonateAddresses,
+		});
+		expect(provider).toBeDefined();
+	});
+
+	it('does not auto-create wallet on eth_requestAccounts when impersonateAddresses provided', async () => {
+		const impersonateAddresses: Hex[] = [
+			'0x1111111111111111111111111111111111111111',
+		];
+
+		const {walletManager} = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			impersonateAddresses,
+		});
+
+		// With impersonation configured, no mnemonic should be auto-created
+		expect(walletManager.get().mnemonic).toBeNull();
+	});
+
+	it('can use both mnemonic and impersonation together', async () => {
+		const impersonateAddresses: Hex[] = [
+			'0x1111111111111111111111111111111111111111',
+		];
+
+		const {walletManager} = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			impersonateAddresses,
+		});
+
+		// Can create mnemonic alongside impersonation
+		walletManager.createNew();
+		expect(walletManager.get().mnemonic).not.toBeNull();
+	});
+
+	it('selectAccount works with impersonated address', async () => {
+		const impersonateAddresses: Hex[] = [
+			'0x1111111111111111111111111111111111111111',
+			'0x2222222222222222222222222222222222222222',
+		];
+
+		const {walletManager} = createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			impersonateAddresses,
+		});
+
+		// Select an impersonated address
+		walletManager.selectAccount(impersonateAddresses[1]);
+		expect(walletManager.get().selectedAddress).toBe(impersonateAddresses[1]);
+	});
+
+	it('impersonateAddresses is not persisted to localStorage', async () => {
+		const impersonateAddresses: Hex[] = [
+			'0x1111111111111111111111111111111111111111',
+		];
+
+		createBurnerWalletProvider({
+			nodeURL: 'http://localhost:8545',
+			impersonateAddresses,
+		});
+
+		// Should not have saved impersonateAddresses
+		expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
+			expect.stringContaining('impersonate'),
+			expect.anything(),
+		);
 	});
 });

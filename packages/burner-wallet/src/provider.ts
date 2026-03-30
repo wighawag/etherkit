@@ -18,6 +18,7 @@ import {
 import {english} from 'viem/accounts';
 import {
 	ACCOUNT_COUNT,
+	type Hex,
 	type BurnerWalletManager,
 	type BurnerWalletState,
 	type CreateBurnerWalletProviderOptions,
@@ -41,12 +42,12 @@ type EventListener =
 export function createBurnerWalletProvider(
 	options: CreateBurnerWalletProviderOptions,
 ): BurnerWalletProviderResult {
-	const {nodeURL, storagePrefix = 'burner-wallet:'} = options;
+	const {nodeURL, storagePrefix = 'burner-wallet:', impersonateAddresses} = options;
 	const eventListeners = new Map<EventName, Set<EventListener>>();
 
 	// ==================== Internal State ====================
 	let mnemonic: string | null = null;
-	let selectedIndex = 0;
+	let selectedAddress: Hex | null = null;
 
 	// ==================== localStorage ====================
 	function load(): void {
@@ -56,7 +57,9 @@ export function createBurnerWalletProvider(
 
 			if (storedMnemonic) {
 				mnemonic = storedMnemonic;
-				selectedIndex = storedSelected ? parseInt(storedSelected, 10) : 0;
+			}
+			if (storedSelected) {
+				selectedAddress = storedSelected as Hex;
 			}
 		} catch {
 			// localStorage unavailable (SSR, etc)
@@ -67,9 +70,12 @@ export function createBurnerWalletProvider(
 		try {
 			if (mnemonic) {
 				localStorage.setItem(storagePrefix + 'mnemonic', mnemonic);
-				localStorage.setItem(storagePrefix + 'selected', String(selectedIndex));
 			} else {
 				localStorage.removeItem(storagePrefix + 'mnemonic');
+			}
+			if (selectedAddress) {
+				localStorage.setItem(storagePrefix + 'selected', selectedAddress);
+			} else {
 				localStorage.removeItem(storagePrefix + 'selected');
 			}
 		} catch {
@@ -88,10 +94,6 @@ export function createBurnerWalletProvider(
 	}
 
 	async function emitAccountsChanged(): Promise<void> {
-		if (!mnemonic) {
-			emit('accountsChanged', []);
-			return;
-		}
 		// Get accounts from inner provider and reorder
 		const accounts = await inner.request({method: 'eth_accounts'});
 		emit('accountsChanged', getOrderedAddresses(accounts as string[]));
@@ -101,33 +103,34 @@ export function createBurnerWalletProvider(
 	function buildInner(): EIP1193ProviderWithoutEvents {
 		const rpcProvider = createCurriedJSONRPC(nodeURL);
 
-		const options: ProviderOptions = {};
+		const providerOptions: ProviderOptions = {};
 
 		if (mnemonic) {
-			options.accounts = {
+			providerOptions.accounts = {
 				mnemonic,
 				numAccounts: ACCOUNT_COUNT,
 			};
 		}
 
-		// TODO, options to have a list of impersonated account, instead of mnemonic
-		// could also support both mnemonic and impersonated acounts
-		// options.impersonate = {
-		// 	impersonator: {
-		// 		impersonateAccount: async (params: {address: `0x${string}`}) => {
-		// 			await (rpcProvider as any).request({
-		// 				method: 'hardhat_impersonateAccount',
-		// 				params: [params.address],
-		// 			});
-		// 		},
-		// 	},
-		// 	mode: 'list',
-		// 	list: [],
-		// };
+		// Add impersonation support when list is provided
+		if (impersonateAddresses && impersonateAddresses.length > 0) {
+			providerOptions.impersonate = {
+				impersonator: {
+					impersonateAccount: async (params: {address: Hex}) => {
+						await (rpcProvider as any).request({
+							method: 'hardhat_impersonateAccount',
+							params: [params.address],
+						});
+					},
+				},
+				mode: 'list',
+				list: impersonateAddresses,
+			};
+		}
 
 		return extendProviderWithAccounts(
 			rpcProvider as unknown as EIP1193ProviderWithoutEvents,
-			options,
+			providerOptions,
 		);
 	}
 
@@ -135,15 +138,21 @@ export function createBurnerWalletProvider(
 
 	// ==================== Address Ordering ====================
 	/**
-	 * Reorder addresses so selectedIndex is first.
+	 * Reorder addresses so selectedAddress is first.
 	 * Per EIP-1193, accounts[0] is the "active" account.
 	 */
 	function getOrderedAddresses(addresses: string[]): string[] {
 		if (addresses.length === 0) return [];
-		if (selectedIndex === 0 || selectedIndex >= addresses.length)
-			return addresses;
+		if (!selectedAddress) return addresses;
+
+		const selectedIdx = addresses.findIndex(
+			(addr) => addr.toLowerCase() === selectedAddress!.toLowerCase(),
+		);
+
+		if (selectedIdx === -1 || selectedIdx === 0) return addresses;
+
 		const result = [...addresses];
-		const [selected] = result.splice(selectedIndex, 1);
+		const [selected] = result.splice(selectedIdx, 1);
 		result.unshift(selected);
 		return result;
 	}
@@ -152,7 +161,7 @@ export function createBurnerWalletProvider(
 	const walletManager: BurnerWalletManager = {
 		createNew(): string {
 			mnemonic = generateMnemonic(english);
-			selectedIndex = 0;
+			selectedAddress = null; // Reset selection, first account will be used
 			save();
 			inner = buildInner();
 			emitAccountsChanged();
@@ -162,19 +171,14 @@ export function createBurnerWalletProvider(
 		importMnemonic(newMnemonic: string): void {
 			// Validate by building provider (will throw if invalid)
 			mnemonic = newMnemonic;
-			selectedIndex = 0;
+			selectedAddress = null; // Reset selection
 			inner = buildInner(); // This validates the mnemonic
 			save();
 			emitAccountsChanged();
 		},
 
-		selectAccount(index: number): void {
-			if (index < 0 || index >= ACCOUNT_COUNT) {
-				throw new Error(
-					`Invalid index: ${index}. Must be 0-${ACCOUNT_COUNT - 1}`,
-				);
-			}
-			selectedIndex = index;
+		selectAccount(address: Hex): void {
+			selectedAddress = address;
 			save();
 			// No need to rebuild inner - just reorder addresses
 			emitAccountsChanged();
@@ -182,23 +186,23 @@ export function createBurnerWalletProvider(
 
 		clearAll(): void {
 			mnemonic = null;
-			selectedIndex = 0;
+			selectedAddress = null;
 			save();
 			inner = buildInner();
 			emitAccountsChanged();
 		},
 
 		get(): BurnerWalletState {
-			return {mnemonic, selectedIndex};
+			return {mnemonic, selectedAddress};
 		},
 	};
 
 	// ==================== Provider ====================
 	const provider: EIP1193Provider = {
 		async request(args: {method: string; params?: readonly unknown[]}) {
-			// Auto-create wallet on first connection
+			// Auto-create wallet on first connection (only if no mnemonic and no impersonation configured)
 			if (args.method === 'eth_requestAccounts') {
-				if (!mnemonic) {
+				if (!mnemonic && !(impersonateAddresses && impersonateAddresses.length > 0)) {
 					walletManager.createNew();
 				}
 				const accounts = await inner.request(args as any);

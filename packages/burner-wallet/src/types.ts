@@ -7,19 +7,19 @@ export const ACCOUNT_COUNT = 10;
 export type BurnerWalletState = {
 	/** The mnemonic phrase - null if not yet created */
 	mnemonic: string | null;
-	/** Currently selected account index (0-based) */
-	selectedIndex: number;
+	/** Currently selected account address - null if none selected */
+	selectedAddress: Hex | null;
 };
 
 export type BurnerWalletManager = {
 	/** Generate new wallet with fresh 12-word mnemonic, returns the mnemonic */
 	createNew: () => string;
 
-	/** Import existing mnemonic, resets selectedIndex to 0 */
+	/** Import existing mnemonic */
 	importMnemonic: (mnemonic: string) => void;
 
-	/** Select account by index (0-9), affects address ordering */
-	selectAccount: (index: number) => void;
+	/** Select account by address - affects address ordering, selected address will be first */
+	selectAccount: (address: Hex) => void;
 
 	/** Clear everything - mnemonic and selection */
 	clearAll: () => void;
@@ -33,6 +33,8 @@ export type CreateBurnerWalletProviderOptions = {
 	nodeURL: string;
 	/** localStorage key prefix (default: 'burner-wallet:') */
 	storagePrefix?: string;
+	/** List of addresses to impersonate - requires a node that supports hardhat_impersonateAccount */
+	impersonateAddresses?: Hex[];
 };
 
 export type BurnerWalletProviderResult = {
