@@ -215,6 +215,9 @@ export function createBurnerWalletProvider(
 
 			// Return ordered addresses
 			if (args.method === 'eth_accounts') {
+				if (!mnemonic) {
+					walletManager.createNew();
+				}
 				const accounts = await inner.request(args as any);
 				return getOrderedAddresses(accounts as unknown as string[]);
 			}
