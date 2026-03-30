@@ -1,5 +1,11 @@
 # @etherkit/burner-wallet
 
+## 0.0.6
+
+### Patch Changes
+
+- 1644ccc: still create mnemonic when not present
+
 ## 0.0.5
 
 ### Patch Changes
