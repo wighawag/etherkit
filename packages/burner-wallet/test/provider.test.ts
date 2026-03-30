@@ -489,18 +489,22 @@ describe('impersonation', () => {
 		expect(provider).toBeDefined();
 	});
 
-	it('does not auto-create wallet on eth_requestAccounts when impersonateAddresses provided', async () => {
+	it('auto-creates mnemonic wallet on eth_requestAccounts even when impersonateAddresses provided', async () => {
 		const impersonateAddresses: Hex[] = [
 			'0x1111111111111111111111111111111111111111',
 		];
 
-		const {walletManager} = createBurnerWalletProvider({
+		const {provider, walletManager} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 			impersonateAddresses,
 		});
 
-		// With impersonation configured, no mnemonic should be auto-created
+		// Before eth_requestAccounts, no mnemonic
 		expect(walletManager.get().mnemonic).toBeNull();
+
+		// eth_requestAccounts should auto-create mnemonic even with impersonation configured
+		await provider.request({method: 'eth_requestAccounts'});
+		expect(walletManager.get().mnemonic).not.toBeNull();
 	});
 
 	it('can use both mnemonic and impersonation together', async () => {

@@ -204,12 +204,9 @@ export function createBurnerWalletProvider(
 	// ==================== Provider ====================
 	const provider: EIP1193Provider = {
 		async request(args: {method: string; params?: readonly unknown[]}) {
-			// Auto-create wallet on first connection (only if no mnemonic and no impersonation configured)
+			// Auto-create wallet on first connection
 			if (args.method === 'eth_requestAccounts') {
-				if (
-					!mnemonic &&
-					!(impersonateAddresses && impersonateAddresses.length > 0)
-				) {
+				if (!mnemonic) {
 					walletManager.createNew();
 				}
 				const accounts = await inner.request(args as any);
