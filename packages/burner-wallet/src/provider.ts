@@ -42,7 +42,11 @@ type EventListener =
 export function createBurnerWalletProvider(
 	options: CreateBurnerWalletProviderOptions,
 ): BurnerWalletProviderResult {
-	const {nodeURL, storagePrefix = 'burner-wallet:', impersonateAddresses} = options;
+	const {
+		nodeURL,
+		storagePrefix = 'burner-wallet:',
+		impersonateAddresses,
+	} = options;
 	const eventListeners = new Map<EventName, Set<EventListener>>();
 
 	// ==================== Internal State ====================
@@ -202,7 +206,10 @@ export function createBurnerWalletProvider(
 		async request(args: {method: string; params?: readonly unknown[]}) {
 			// Auto-create wallet on first connection (only if no mnemonic and no impersonation configured)
 			if (args.method === 'eth_requestAccounts') {
-				if (!mnemonic && !(impersonateAddresses && impersonateAddresses.length > 0)) {
+				if (
+					!mnemonic &&
+					!(impersonateAddresses && impersonateAddresses.length > 0)
+				) {
 					walletManager.createNew();
 				}
 				const accounts = await inner.request(args as any);

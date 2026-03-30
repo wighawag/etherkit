@@ -76,7 +76,9 @@ describe('createBurnerWalletProvider', () => {
 		cleanup();
 
 		// Get an account address to select
-		const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+		const accounts = (await provider.request({
+			method: 'eth_accounts',
+		})) as string[];
 
 		// Changing selection should NOT emit accountsChanged after cleanup
 		walletManager.selectAccount(accounts[1] as Hex);
@@ -235,7 +237,9 @@ describe('createBurnerWalletProvider', () => {
 		listener.mockClear();
 
 		// Get accounts to get an address to select
-		const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+		const accounts = (await provider.request({
+			method: 'eth_accounts',
+		})) as string[];
 
 		// Change selected account to third account
 		walletManager.selectAccount(accounts[2] as Hex);
@@ -305,7 +309,9 @@ describe('walletManager', () => {
 			walletManager.createNew();
 
 			// Get accounts and select one
-			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			const accounts = (await provider.request({
+				method: 'eth_accounts',
+			})) as string[];
 			walletManager.selectAccount(accounts[5] as Hex);
 			expect(walletManager.get().selectedAddress).toBe(accounts[5]);
 
@@ -323,7 +329,9 @@ describe('walletManager', () => {
 			});
 			walletManager.createNew();
 
-			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			const accounts = (await provider.request({
+				method: 'eth_accounts',
+			})) as string[];
 			walletManager.selectAccount(accounts[5] as Hex);
 			expect(walletManager.get().selectedAddress).toBe(accounts[5]);
 		});
@@ -335,7 +343,9 @@ describe('walletManager', () => {
 			walletManager.createNew();
 			localStorageMock.setItem.mockClear();
 
-			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			const accounts = (await provider.request({
+				method: 'eth_accounts',
+			})) as string[];
 			walletManager.selectAccount(accounts[3] as Hex);
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
 				'burner-wallet:selected',
@@ -351,7 +361,9 @@ describe('walletManager', () => {
 			});
 			walletManager.createNew();
 
-			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			const accounts = (await provider.request({
+				method: 'eth_accounts',
+			})) as string[];
 			walletManager.selectAccount(accounts[5] as Hex);
 			walletManager.clearAll();
 
@@ -379,7 +391,9 @@ describe('walletManager', () => {
 			});
 			walletManager.createNew();
 
-			const accounts = (await provider.request({method: 'eth_accounts'})) as string[];
+			const accounts = (await provider.request({
+				method: 'eth_accounts',
+			})) as string[];
 			walletManager.selectAccount(accounts[3] as Hex);
 
 			const state = walletManager.get();
