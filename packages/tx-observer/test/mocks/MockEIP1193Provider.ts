@@ -88,6 +88,20 @@ export interface MockProviderController {
 	setFailMethods(methods: string[]): void;
 	simulateDisconnect(): void;
 	simulateReconnect(): void;
+	/**
+	 * Simulate a provider (e.g. an injected wallet caching on a dev chain) that
+	 * keeps returning a stale pending view from `eth_getTransactionByHash`
+	 * (blockHash/blockNumber null) for already-included txs, while
+	 * `eth_getTransactionReceipt` still resolves the mined receipt.
+	 */
+	setStaleTransactionView(enabled: boolean): void;
+	/**
+	 * Simulate a provider that has a receipt for a mined tx but cannot yet
+	 * resolve its block via `eth_getBlockByHash` (returns null), e.g. a lagging
+	 * node that has surfaced the receipt but not the block. The receipt lookup
+	 * still succeeds; only the block-by-hash lookup returns null.
+	 */
+	setHideBlockByHash(enabled: boolean): void;
 
 	// Hooks for testing concurrent scenarios
 	onRequest(hook: RequestHook): () => void;
@@ -123,6 +137,8 @@ export function createMockProvider(config: MockProviderConfig = {}): {
 	let failRate = failureRate;
 	let failingMethods = [...failMethods];
 	let disconnected = false;
+	let staleTransactionView = false;
+	let hideBlockByHash = false;
 
 	// Storage
 	const blocks: Map<number, MockBlock> = new Map();
@@ -232,6 +248,9 @@ export function createMockProvider(config: MockProviderConfig = {}): {
 
 				case 'eth_getBlockByHash': {
 					const hash = params[0] as string;
+					if (hideBlockByHash) {
+						return null;
+					}
 					return blocksByHash.get(hash) || null;
 				}
 
@@ -241,6 +260,15 @@ export function createMockProvider(config: MockProviderConfig = {}): {
 					// First check if included in a block
 					const includedTx = includedTxs.get(hash);
 					if (includedTx) {
+						// Simulate a provider stuck on a cached pending view: the tx
+						// is known but reported without block info even though mined.
+						if (staleTransactionView) {
+							return {
+								...includedTx,
+								blockHash: null,
+								blockNumber: null,
+							};
+						}
 						return includedTx;
 					}
 
@@ -412,6 +440,14 @@ export function createMockProvider(config: MockProviderConfig = {}): {
 
 		simulateReconnect(): void {
 			disconnected = false;
+		},
+
+		setStaleTransactionView(enabled: boolean): void {
+			staleTransactionView = enabled;
+		},
+
+		setHideBlockByHash(enabled: boolean): void {
+			hideBlockByHash = enabled;
 		},
 
 		onRequest(hook: RequestHook): () => void {

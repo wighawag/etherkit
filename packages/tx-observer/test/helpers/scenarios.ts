@@ -31,9 +31,12 @@ export interface TestSetup {
  * Create a complete test setup with processor and mock provider
  */
 export function createTestSetup(
-	config: MockProviderConfig & {finality?: number} = {},
+	config: MockProviderConfig & {
+		finality?: number;
+		alwaysFetchReceipt?: boolean;
+	} = {},
 ): TestSetup {
-	const {finality = 12, ...providerConfig} = config;
+	const {finality = 12, alwaysFetchReceipt, ...providerConfig} = config;
 
 	// Reset counters for clean test state
 	resetHashCounter();
@@ -44,6 +47,7 @@ export function createTestSetup(
 	const processor = createTransactionObserver({
 		finality,
 		provider,
+		alwaysFetchReceipt,
 	});
 
 	const emissions: TransactionIntent[] = [];

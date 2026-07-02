@@ -60,10 +60,11 @@ describe('Network Conditions', () => {
 			// Make tx lookup fail
 			setup.controller.setFailMethods(['eth_getTransactionByHash']);
 
-			// Process should throw
-			await expect(setup.processor.process()).rejects.toThrow();
+			// A per-intent RPC failure is isolated: process() resolves (does not
+			// reject) so other intents still process and the loop is not wedged.
+			await expect(setup.processor.process()).resolves.toBeUndefined();
 
-			// Most recent emission should still show previous state
+			// The intent's state is left unchanged, to be retried next tick.
 			const lastEmission = getLatestEmissionForIntent(setup, intentId);
 			expect(lastEmission?.state?.inclusion).toBe('InMemPool');
 		});
@@ -83,8 +84,9 @@ describe('Network Conditions', () => {
 			setup.controller.includeTx(txHash, 'success');
 			setup.controller.setFailMethods(['eth_getTransactionReceipt']);
 
-			// Process should throw
-			await expect(setup.processor.process()).rejects.toThrow();
+			// A per-intent RPC failure is isolated: process() resolves rather than
+			// rejecting, leaving the intent to be retried next tick.
+			await expect(setup.processor.process()).resolves.toBeUndefined();
 
 			// Intent should stay at Broadcasted (couldn't confirm inclusion)
 			const lastEmission = getLatestEmissionForIntent(setup, intentId);

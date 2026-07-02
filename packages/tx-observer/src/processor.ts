@@ -172,6 +172,22 @@ export function createTransactionObserver(config: {
 	finality: number;
 	throttle?: number;
 	provider?: EIP1193ProviderWithoutEvents;
+	/**
+	 * Some providers (notably injected wallets like MetaMask on dev/local
+	 * chains) cache `eth_getTransactionByHash` and keep returning a stale
+	 * pending view of a mined transaction, with `blockNumber: null`. By default
+	 * the observer only fetches the receipt when `getTransactionByHash` reports a
+	 * block, so against such a provider a mined tx stays stuck as `InMemPool`.
+	 *
+	 * When `alwaysFetchReceipt` is true, the observer additionally calls
+	 * `eth_getTransactionReceipt` directly whenever the tx is known to the
+	 * provider but reports no block. If the receipt shows inclusion, the tx is
+	 * marked `Included`. This mirrors what a direct receipt lookup (e.g. a block
+	 * explorer) does and does not require any dedicated/hardcoded RPC.
+	 *
+	 * Defaults to `false` to preserve existing behaviour.
+	 */
+	alwaysFetchReceipt?: boolean;
 }): TransactionObserver {
 	const emitter = new Emitter<{
 		// Fires when any TX in the intent changes (for persistence)
@@ -319,6 +335,10 @@ export function createTransactionObserver(config: {
 		// Capture generation at start to detect if clear() is called during processing
 		const startGeneration = clearGeneration;
 
+		// The two block fetches are infrastructure-level: if we can't even read the
+		// chain head, the whole tick cannot proceed. We let such errors reject
+		// process() (the caller's interval simply retries next tick). Per-intent
+		// errors, by contrast, are isolated below so one bad tx can't wedge others.
 		const latestBlock = await provider.request({
 			method: 'eth_getBlockByNumber',
 			params: ['latest', false],
@@ -372,13 +392,21 @@ export function createTransactionObserver(config: {
 				logger.debug('process aborted in intent loop: clear() was called');
 				return;
 			}
-			await processTransactionIntent(id, intentsById[id], {
-				latestBlockNumber,
-				latestBlockTime,
-				latestFinalizedBlock,
-				latestFinalizedBlockTime,
-				startGeneration,
-			});
+			// Isolate per-intent failures: a provider error on one intent's tx
+			// (e.g. an injected wallet mishandling a specific request) must not
+			// prevent the other intents from being processed, nor wedge the loop.
+			// The intent is simply retried on the next tick.
+			try {
+				await processTransactionIntent(id, intentsById[id], {
+					latestBlockNumber,
+					latestBlockTime,
+					latestFinalizedBlock,
+					latestFinalizedBlockTime,
+					startGeneration,
+				});
+			} catch (err) {
+				logger.error(`process: failed to process intent ${id}`, err);
+			}
 		}
 	}
 
@@ -551,7 +579,11 @@ export function createTransactionObserver(config: {
 		let changes = false;
 		if (txFromPeers) {
 			let receipt;
-			if (txFromPeers.blockNumber) {
+			// Normally the receipt is only worth fetching once the tx reports a
+			// block. But some providers keep returning a stale pending view
+			// (blockNumber null) for an already-mined tx; `alwaysFetchReceipt`
+			// makes us ask for the receipt directly in that case too.
+			if (txFromPeers.blockNumber || config.alwaysFetchReceipt) {
 				receipt = await provider.request({
 					method: 'eth_getTransactionReceipt',
 					params: [transaction.hash],
@@ -562,13 +594,28 @@ export function createTransactionObserver(config: {
 				}
 			}
 			if (receipt) {
-				const block = await provider.request({
-					method: 'eth_getBlockByHash',
-					params: [txFromPeers.blockHash, false],
-				});
+				// The tx view may be stale (blockHash null) while the receipt
+				// carries the real inclusion block; prefer the receipt's blockHash.
+				const blockHash = txFromPeers.blockHash ?? receipt.blockHash;
+				const block = blockHash
+					? await provider.request({
+							method: 'eth_getBlockByHash',
+							params: [blockHash, false],
+						})
+					: null;
 				// Abort if clear() was called
 				if (clearGeneration !== startGeneration) {
 					return false;
+				}
+				if (!block) {
+					// We have a receipt (proof of mining) but could not resolve its
+					// block yet, e.g. a lagging provider that has not surfaced the
+					// inclusion block through eth_getBlockByHash. Leave the state
+					// unchanged and retry next tick rather than reporting a false
+					// state; log it so the situation is observable.
+					logger.debug(
+						`receipt present for ${transaction.hash} but block ${blockHash} not resolvable yet; retrying next tick`,
+					);
 				}
 				if (block) {
 					const blockNumber = Number(block.number);

@@ -88,6 +88,7 @@ Creates a new transaction processor instance.
 | `finality` | `number` | Number of blocks until a transaction is considered final |
 | `throttle` | `number?` | Optional: throttle interval in ms for `process()` calls |
 | `provider` | `EIP1193ProviderWithoutEvents?` | Optional Ethereum provider (can be set later) |
+| `alwaysFetchReceipt` | `boolean?` | Fetch the receipt directly even when the tx view hides its block. Recovers mined txs from lagging/injected wallets (e.g. MetaMask on a restartable dev chain) that keep returning a stale pending view from `eth_getTransactionByHash` (`blockNumber: null`). Default `false`. |
 
 **Returns:** Processor instance with the following methods:
 
