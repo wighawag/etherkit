@@ -1,322 +1,251 @@
-# @etherkit/tx-observer
+# @etherkit/viem-tx-tracker
 
-A TypeScript library for monitoring Ethereum onchain operations containing multiple transactions, with automatic status merging and finality tracking.
+A thin wrapper around a viem `WalletClient` that records what you sent, so you can track it afterwards.
 
 ## Overview
 
-The Operation Processor tracks **operations** - logical groupings of transactions that belong together. This is useful when:
+viem gives you a transaction hash. That is rarely enough: to show a meaningful pending state, to resume tracking after a reload, or to replace a stuck transaction, you also need to know what the transaction was for, who sent it, with which nonce, and through which signing route.
 
-- **Gas price bumping**: Multiple transactions with the same nonce but different gas prices
-- **Sequential retries**: Transactions with different nonces for the same logical action
-- **Multi-step operations**: Related transactions that form a single user action
+This package wraps a `WalletClient` with the same method names (`sendTransaction`, `writeContract`, their `*Sync` variants, `sendRawTransaction`) and emits an event for every broadcast, carrying:
 
-The processor monitors all transactions in an operation and computes a merged status, emitting events when the operation status changes.
+- the facts observed at dispatch: `hash`, `from`, `nonce`, `to`, `value`, `data`, `broadcastTimestampMs`, the intended gas parameters and inferred transaction type
+- `metadata`: whatever your application says the transaction means, in your own type
+- `source`: an opaque marker of which signing route produced it, in your own type
+
+It also resolves the nonce for you (`pending` by default) and, once broadcast, fetches the transaction back from the chain and emits a second event with the values the chain actually recorded.
+
+The tracker never interprets `metadata` or `source`. It carries them.
 
 ## Installation
 
 ```bash
-npm install @etherkit/tx-observer
+npm install @etherkit/viem-tx-tracker viem
 ```
 
-## Quick Start
+`viem` (`^2.46.3`) is a peer dependency.
+
+## Quick start
 
 ```typescript
-import { createTransactionObserver } from '@etherkit/tx-observer';
-import type { OnchainOperation, BroadcastedTransaction, OnchainOperationEvent } from '@etherkit/tx-observer';
+import {createPublicClient, createWalletClient, custom, http, parseEther} from 'viem';
+import {mainnet} from 'viem/chains';
+import {createTrackedWalletClient} from '@etherkit/viem-tx-tracker';
 
-// Initialize the processor
-const processor = createTransactionObserver({
-  finality: 12, // blocks until considered final
-  throttle: 5000, // optional: throttle process() calls
-  provider: window.ethereum,
+// What a transaction means, in your own words
+type MyMetadata = {id: string; title: string};
+
+const walletClient = createWalletClient({chain: mainnet, transport: custom(window.ethereum)});
+const publicClient = createPublicClient({chain: mainnet, transport: http()});
+
+const tracked = createTrackedWalletClient<MyMetadata>().using(walletClient, publicClient);
+
+tracked.on('transaction:broadcasted', (tx) => {
+  // Fires immediately. Save this: it is everything you need to resume tracking.
+  save(tx.hash, tx);
 });
 
-// Create an operation with one or more transactions
-const operation: OnchainOperation = {
-  transactions: [
-    {
-      hash: '0xabc...',
-      from: '0x123...',
-      nonce: 5,
-      broadcastTimestamp: Date.now(),
-    },
-  ],,
-};
-
-// Add the operation to tracking (ID is passed separately)
-processor.add('my-operation-1', operation);
-
-// Listen for operation status changes (for UI updates)
-processor.onOperationStatusUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id}: ${event.operation.state?.inclusion}`);
-  
-  if (event.operation.state?.inclusion === 'Included') {
-    const winningTx = event.operation.transactions[event.operation.state.txIndex];
-    console.log(`Status: ${event.operation.state.status}`);
-    console.log(`Winning TX: ${winningTx.hash}`);
-  }
-  
-  return () => {}; // cleanup function
+tracked.on('transaction:fetched', (tx) => {
+  // Fires once the transaction has been read back from the chain,
+  // with the values the chain actually recorded.
+  save(tx.hash, tx);
 });
 
-// Listen for any transaction changes (for persistence)
-processor.onOperationUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id} updated, save to storage`);
-  return () => {}; // cleanup function
-});
-
-// Process periodically (check for status updates)
-setInterval(() => processor.process(), 5000);
-```
-
-## API Reference
-
-### `createTransactionObserver(config)`
-
-Creates a new operation processor instance.
-
-**Config:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `finality` | `number` | Number of blocks until a transaction is considered final |
-| `throttle` | `number?` | Optional: throttle interval in ms for `process()` calls |
-| `provider` | `EIP1193ProviderWithoutEvents?` | Optional Ethereum provider (can be set later) |
-
-**Returns:** Processor instance with the following methods:
-
-#### `add(id: string, operation: OnchainOperation)`
-
-Add an operation to track. If an operation with the same ID already exists, the transactions are merged into the existing operation.
-
-```typescript
-// Add new operation
-processor.add('my-operation-1', operation);
-
-// Add another transaction to existing operation (same ID merges)
-processor.add('my-operation-1', {
-  transactions: [bumpedTx], // New tx with higher gas
-  // ... state fields
-});
-// and in case where you track the txs already you can simply re-add
-operation.transactions.push(bumpedTx);
-processor.add('my-operation-1', operation);
-```
-
-#### `addMultiple(operations: {[id: string]: OnchainOperation})`
-
-Add multiple operations at once.
-
-```typescript
-processor.addMultiple({
-  'operation-1': operation1,
-  'operation-2': operation2,
+const hash = await tracked.sendTransaction({
+  to: '0x...',
+  value: parseEther('0.1'),
+  metadata: {id: 'deposit-1', title: 'Deposit'},
 });
 ```
 
-#### `remove(operationId: string)`
+The client is built in two steps. `createTrackedWalletClient<TMetadata>(options?)` fixes the types and the options, `.using(walletClient, publicClient)` binds the clients. This is what lets `TMetadata` be explicit while the transport, chain and account types stay inferred from your wallet client.
 
-Remove an operation by ID and stop tracking it.
+## Metadata
+
+`TMetadata` is yours and it is mandatory to declare. Whether the `metadata` argument is required follows from the type:
 
 ```typescript
-processor.remove('my-operation-1');
+// metadata is required on every call
+createTrackedWalletClient<{id: string}>();
+
+// metadata may be omitted
+createTrackedWalletClient<{id: string} | undefined>();
 ```
 
-#### `clear()`
+### Auto-populated metadata
 
-Remove all operations.
+With `populateMetadata: true`, `writeContract` and `writeContractSync` fill in the call they made:
 
 ```typescript
-processor.clear();
+import type {PopulatedMetadata} from '@etherkit/viem-tx-tracker';
+
+const tracked = createTrackedWalletClient({populateMetadata: true}).using(
+  walletClient,
+  publicClient,
+);
+
+await tracked.writeContract({address, abi, functionName: 'transfer', args: [to, amount]});
+// metadata: {type: 'functionCall', functionName: 'transfer', args: [to, amount]}
 ```
 
-#### `process(): Promise<void>`
-
-Check and update the status of all tracked operations. This queries the Ethereum provider for transaction receipts and updates statuses accordingly.
+`type`, `functionName` and `args` are then owned by the tracker: passing any of them yourself throws. You can still extend the rest of the type, in which case your own fields stay required:
 
 ```typescript
-await processor.process();
+type MyMetadata = FunctionCallMetadata & {purpose: string};
+
+const tracked = createTrackedWalletClient<MyMetadata>({populateMetadata: true}).using(
+  walletClient,
+  publicClient,
+);
+
+await tracked.writeContract({address, abi, functionName: 'transfer', args, metadata: {purpose: 'checkout'}});
 ```
 
-#### `setProvider(provider: EIP1193Provider)`
+`sendTransaction` and `sendRawTransaction` have no contract call to read, so they still take metadata in full. The default `PopulatedMetadata` type includes an `UnknownTypeMetadata` variant for them.
 
-Update the Ethereum provider.
+## Source: which route signed
 
-```typescript
-processor.setProvider(newProvider);
-```
+An application can have several ways to send: the wallet the user is connected with, a local signer whose key it holds, a separate wallet connection used only to pay. When one of those transactions gets stuck, replacing or cancelling it means reactivating the route that signed it and reusing that nonce. `from` is not enough to find that route again: it may be dormant, and a locked wallet will not tell you which addresses it holds.
 
-#### `onOperationUpdated(listener): void`
-
-Subscribe to any operation changes (when any transaction in the operation changes). Useful for persistence.
+Declare a `TSource` and the tracker will stamp it on every transaction:
 
 ```typescript
-processor.onOperationUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id} changed:`, event.operation);
-  return () => {}; // cleanup
+type MySource = 'connected-wallet' | 'local-signer' | 'payer-wallet';
+
+const tracked = createTrackedWalletClient<MyMetadata, MySource>({
+  source: 'local-signer',
+}).using(walletClient, publicClient);
+
+tracked.on('transaction:broadcasted', (tx) => {
+  tx.source; // 'local-signer'
 });
 ```
 
-#### `offOperationUpdated(listener): void`
+Points worth knowing:
 
-Unsubscribe from operation changes.
+- It is supplied once, at construction, and never per call. The source is a property of the route, not of an individual transaction, and a per-call argument is something a call site can forget or state wrongly.
+- It can be a thunk, `() => TSource`, evaluated at every broadcast, in the same step that stamps `from`, `nonce` and `broadcastTimestampMs`. Use this when one client can serve different wallets or accounts over its life: a value captured at construction would be silently wrong in exactly that case.
+- Declaring a `TSource` that excludes `undefined` makes the option mandatory, so a route cannot be built without saying what it is. `TSource` must always be written explicitly: it is never inferred from the option value.
+- It defaults to `undefined`, in which case `source` is simply `undefined` on every transaction.
+- The tracker never inspects it. There is no wallet, EIP-6963 or connection-library knowledge in this package: the union is yours.
 
-#### `onOperationStatusUpdated(listener): void`
+## Nonces
 
-Subscribe to operation status changes only (when the merged status changes). Useful for UI updates.
+Every method takes `nonce` as either an exact number or a block tag:
 
 ```typescript
-processor.onOperationStatusUpdated((event: OnchainOperationEvent) => {
-  console.log(`Operation ${event.id} status:`, event.operation.state?.inclusion);
-  return () => {}; // cleanup
-});
+await tracked.sendTransaction({to, value, nonce: 42});        // exact
+await tracked.sendTransaction({to, value, nonce: 'latest'});  // fetch with this block tag
+await tracked.sendTransaction({to, value});                   // fetch with 'pending' (default)
 ```
 
-#### `offOperationStatusUpdated(listener): void`
+The resolved nonce is injected into the request and recorded on the emitted transaction, so a replacement can reuse it.
 
-Unsubscribe from operation status changes.
+## Events
 
-## Types
-
-### `BroadcastedTransaction`
-
-Represents a single broadcasted transaction.
+| Event | Payload | When |
+|-------|---------|------|
+| `transaction:broadcasted` | `TrackedTransaction<TMetadata, TSource>` | Immediately after the broadcast succeeds |
+| `transaction:fetched` | `KnownTrackedTransaction<TMetadata, TSource>` | Once the transaction has been read back from the chain |
 
 ```typescript
-type BroadcastedTransaction = {
+const unsubscribe = tracked.on('transaction:broadcasted', listener);
+unsubscribe();
+// or
+tracked.off('transaction:broadcasted', listener);
+```
+
+`transaction:fetched` is best effort: if the fetch fails (not in the mempool yet, network trouble) it simply does not fire, and a warning is logged. Treat `transaction:broadcasted` as the event you must handle and `transaction:fetched` as a refinement.
+
+For `sendRawTransaction` the full transaction can be parsed from the signed payload, so `transaction:broadcasted` already carries confirmed values (`known: true`) and no separate fetch is needed.
+
+## The transaction shape
+
+A tracked transaction is discriminated by `known`:
+
+- `known: false` means the values are what was intended and provided. The wallet may still change them, typically gas and occasionally the nonce.
+- `known: true` means the values are confirmed, read from the chain or parsed from a signed transaction.
+
+Both share the same field paths, so `tx.hash`, `tx.metadata`, `tx.source`, `tx.gasParameters` are always reachable:
+
+```typescript
+type CommonFields = {
   readonly hash: `0x${string}`;
   readonly from: `0x${string}`;
-  nonce?: number;
-  readonly broadcastTimestamp: number;
-  state?: BroadcastedTransactionState;
-};
-
-type BroadcastedTransactionState =
-  | { inclusion: 'InMemPool' | 'NotFound'; final: undefined; status: undefined }
-  | { inclusion: 'Dropped'; final?: number; status: undefined }
-  | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number };
-```
-
-### `OnchainOperationStatus`
-
-The merged status of all transactions in an operation.
-
-```typescript
-type OnchainOperationStatus =
-  | { inclusion: 'InMemPool' | 'NotFound'; final: undefined; status: undefined; txIndex: undefined }
-  | { inclusion: 'Dropped'; final?: number; status: undefined; txIndex: undefined }
-  | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number; txIndex: number };
-```
-
-- `txIndex`: Index into `transactions[]` for the "winning" transaction (first success, or first failure if all failed)
-- Get the winning tx hash via: `operation.transactions[operation.state.txIndex].hash`
-
-### `OnchainOperation`
-
-An operation containing multiple transactions.
-
-```typescript
-type OnchainOperation = {
-  transactions: BroadcastedTransaction[];
-  state?: OnchainOperationStatus;
+  readonly nonce: number;
+  readonly to: `0x${string}` | null;
+  readonly value: bigint;
+  readonly data: `0x${string}`;
+  readonly broadcastTimestampMs: number;
+  readonly metadata: TMetadata;
+  readonly source: TSource;
 };
 ```
 
-### `OnchainOperationEvent`
-
-Event payload emitted by listeners, includes both the operation ID and operation data.
+On top of that, a second discriminant, `txType`, carries the gas parameters that belong to that transaction type:
 
 ```typescript
-type OnchainOperationEvent = {
-  id: string;
-  operation: OnchainOperation;
-};
+if (tx.txType === 'eip1559') {
+  tx.gasParameters.maxFeePerGas;
+  tx.gasParameters.maxPriorityFeePerGas;
+} else if (tx.txType === 'legacy' || tx.txType === 'eip2930') {
+  tx.gasParameters.gasPrice;
+}
 ```
 
-## Status States
+For a broadcast transaction (`known: false`) the type is inferred from what you provided: `maxFeePerGas` gives `eip1559`, `gasPrice` with an `accessList` gives `eip2930`, `gasPrice` alone gives `legacy`, and nothing gives `txType: undefined`, meaning the wallet will decide. On a fetched transaction (`known: true`) the type and its gas values are the ones the chain recorded, and every gas field is present.
 
-| Inclusion | Description |
-|-----------|-------------|
-| `Broadcasted` | At least one transaction is visible in the mempool |
-| `NotFound` | No transactions visible in mempool (may be temporary) |
-| `Dropped` | All transactions dropped (nonce was used by external tx) |
-| `Included` | At least one transaction was included in a block |
+`from` and `nonce` are re-read from the chain on `transaction:fetched`. `metadata` and `source` are not observable on chain, so they are carried through from dispatch unchanged.
 
-## Status Merging Logic
+## API
 
-When an operation contains multiple transactions, their statuses are merged using the following priority (highest wins):
+### `createTrackedWalletClient<TMetadata, TSource?>(options?)`
 
-1. **Included** - Any tx included in a block → operation is `Included`
-2. **Broadcasted** - Any tx in mempool → operation is `Broadcasted`
-3. **NotFound** - None visible → operation is `NotFound`
-4. **Dropped** - ALL txs dropped → operation is `Dropped`
+Returns a builder with a single method, `.using(walletClient, publicClient)`.
 
-### For `Included` Operations
+| Option | Type | Description |
+|--------|------|-------------|
+| `source` | `TSource \| (() => TSource)` | The signing route this client is. Required when `TSource` excludes `undefined`, absent by default |
+| `populateMetadata` | `boolean` | Auto-populate `type`, `functionName` and `args` in `writeContract` metadata |
+| `clock` | `() => number` | Current time in milliseconds, for `broadcastTimestampMs`. Defaults to `Date.now` |
 
-- If **any** transaction succeeded → `status: 'Success'`
-- If **all** included transactions failed → `status: 'Failure'`
-- `txIndex` points to the first successful tx, or first failure if all failed
+### Client methods
 
-This allows scenarios like:
-- Tx A (nonce 5) succeeds, Tx B (nonce 6) fails due to nonce conflict → Operation is **Success**
-- Tx A (nonce 5, low gas) dropped, Tx B (nonce 5, high gas) succeeds → Operation is **Success**
+| Method | Returns |
+|--------|---------|
+| `writeContract(args)` | `Promise<Hash>` |
+| `sendTransaction(args)` | `Promise<Hash>` |
+| `sendRawTransaction({serializedTransaction, metadata})` | `Promise<Hash>` |
+| `writeContractSync(args)` | `Promise<TransactionReceipt>` |
+| `sendTransactionSync(args)` | `Promise<TransactionReceipt>` |
+| `sendRawTransactionSync({serializedTransaction, metadata})` | `Promise<TransactionReceipt>` |
+| `on(event, listener)` | `() => void` (unsubscribe) |
+| `off(event, listener)` | `void` |
 
-## Use Cases
+The arguments are viem's, with `nonce` widened to accept a block tag and a `metadata` field added. The underlying clients stay reachable as `tracked.walletClient` and `tracked.publicClient`.
 
-### Gas Price Bumping
+The account comes from the call (`account`) or from the wallet client. If neither has one, the call throws.
 
-When network congestion increases, submit a replacement transaction with the same nonce but higher gas price:
+### Types
+
+`TrackedTransaction`, `KnownTrackedTransaction`, `UnknownTrackedTransaction`, `TrackedWalletClient`, `TrackedWalletClientAutoPopulate`, `TrackedWalletClientEvents`, `PopulatedMetadata`, `FunctionCallMetadata`, `UnknownTypeMetadata`, `NonceOption`, `BlockTag`, `AccessList`, `IntendedGasParameters`, `CreateTrackedWalletClientOptions`.
+
+`TrackedWalletClientType` is a convenience for declaring a client variable without spelling out the whole interface:
 
 ```typescript
-// Initial transaction
-const tx1: BroadcastedTransaction = {
-  hash: '0x111...',
-  from: '0xabc...',
-  nonce: 5,
-  broadcastTimestamp: Date.now(),
-  state: {
-    inclusion: 'InMemPool',
-    status: undefined,
-    final: undefined,
-  },
-};
-
-processor.add('transfer-1', {
-  transactions: [tx1],
-  state: {
-    inclusion: 'InMemPool',
-    status: undefined,
-    final: undefined,
-    txIndex: undefined,
-  },
-});
-
-// Later, bump gas price (same nonce)
-const tx2: BroadcastedTransaction = {
-  ...tx1,
-  hash: '0x222...', // Different hash
-};
-
-processor.add('transfer-1', { // Same ID → merges
-  transactions: [tx2],
-});
-
-// Operation now tracks both txs
-// Whichever is included first determines the operation result
+type MyClient = TrackedWalletClientType<MyMetadata>;
+type MyAutoClient = TrackedWalletClientType<PopulatedMetadata, true>;
+type MySourcedClient = TrackedWalletClientType<
+  MyMetadata,
+  false,
+  Transport,
+  Chain,
+  Account,
+  MySource
+>;
 ```
 
-### Sequential Retry
+`TSource` is the last type parameter on the client types and the second on the transaction types, so existing code that spelled out transport, chain and account keeps compiling untouched.
 
-If a transaction is stuck, retry with a new nonce:
+## License
 
-```typescript
-processor.add('my-action', {
-  transactions: [
-    { hash: '0x1...', from: '0xabc...', nonce: 5, broadcastTimestamp: Date.now() }, // Original
-    { hash: '0x2...', from: '0xabc...', nonce: 6, broadcastTimestamp: Date.now() }, // Retry with new nonce
-  ],
-});
-
-// If tx with nonce 5 succeeds, operation is Success
-// Even if tx with nonce 6 fails (nonce conflict), operation is still Success
-```
+MIT
