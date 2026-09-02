@@ -13,6 +13,7 @@
 		"format": "pnpm run -r format",
 		"format:check": "pnpm run -r format:check",
 		"build": "pnpm run -r build",
+		"typecheck": "pnpm run -r typecheck",
 		"test": "pnpm run -r test"
 	}
 }
