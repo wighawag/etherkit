@@ -1,5 +1,5 @@
 import {Instance, Server} from 'prool';
-import {RPC_PORT} from './url';
+import {RPC_PORT} from './url.js';
 
 export const anvilServer = Server.create({
 	instance: Instance.anvil(),
