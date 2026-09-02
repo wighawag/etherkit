@@ -110,18 +110,46 @@ function inferTxType(
 }
 
 /**
+ * Blocks inference of TSource from the `source` option value.
+ *
+ * Without this, a call that passes no explicit type arguments would infer
+ * TSource from the value (widening `'local-signer'` to `string`) and silently
+ * collapse TMetadata to `unknown`, which turns metadata typing off. TSource is
+ * meant to be declared, never guessed.
+ *
+ * This is TypeScript 5.4's built-in `NoInfer`, spelled out so the package keeps
+ * working for consumers on older TypeScript versions.
+ */
+type NoInferSource<T> = [T][T extends any ? 0 : never];
+
+/**
+ * Resolve the configured source option into a value.
+ *
+ * A thunk is called every time (at broadcast), never memoized: one client can
+ * serve different wallets/accounts over its lifetime.
+ */
+function resolveSource<TSource>(
+	source: TSource | (() => TSource) | undefined,
+): TSource {
+	return typeof source === 'function'
+		? (source as () => TSource)()
+		: (source as TSource);
+}
+
+/**
  * Create an UnknownTrackedTransaction for immediate emission.
  * Populates all known intended values from the transaction parameters.
  */
-function createUnknownTrackedTransaction<TMetadata>(
+function createUnknownTrackedTransaction<TMetadata, TSource>(
 	hash: Hash,
 	from: Address,
 	nonce: number,
 	chainId: number | undefined,
 	metadata: TMetadata,
+	source: TSource,
 	broadcastTimestampMs: number,
 	params: IntendedTransactionParams,
-): UnknownTrackedTransaction<TMetadata> {
+): UnknownTrackedTransaction<TMetadata, TSource> {
 	const base = {
 		known: false as const,
 		chainId,
@@ -130,6 +158,7 @@ function createUnknownTrackedTransaction<TMetadata>(
 		nonce,
 		broadcastTimestampMs,
 		metadata,
+		source,
 		to: params.to,
 		value: params.value,
 		data: params.data,
@@ -247,12 +276,17 @@ function extractTransactionTypeFields(tx: Transaction):
 
 /**
  * Create a KnownTrackedTransaction from a fetched transaction.
+ *
+ * Note: this object is rebuilt from the chain fetch, not copied from the
+ * broadcasted one, so every carried-but-not-observed field (metadata, source)
+ * must be threaded in explicitly.
  */
-function createKnownTrackedTransaction<TMetadata>(
+function createKnownTrackedTransaction<TMetadata, TSource>(
 	tx: Transaction,
 	metadata: TMetadata,
+	source: TSource,
 	broadcastTimestampMs: number,
-): KnownTrackedTransaction<TMetadata> {
+): KnownTrackedTransaction<TMetadata, TSource> {
 	const base = {
 		known: true as const,
 		hash: tx.hash,
@@ -263,6 +297,7 @@ function createKnownTrackedTransaction<TMetadata>(
 		data: tx.input,
 		broadcastTimestampMs,
 		metadata,
+		source,
 	};
 
 	const typeFields = extractTransactionTypeFields(tx);
@@ -270,20 +305,21 @@ function createKnownTrackedTransaction<TMetadata>(
 	return {
 		...base,
 		...typeFields,
-	} as KnownTrackedTransaction<TMetadata>;
+	} as KnownTrackedTransaction<TMetadata, TSource>;
 }
 
 /**
  * Create a KnownTrackedTransaction from a parsed raw transaction.
  */
-function createKnownTrackedTransactionFromRaw<TMetadata>(
+function createKnownTrackedTransactionFromRaw<TMetadata, TSource>(
 	parsedTx: ParseTransactionReturnType<`0x${string}`>,
 	from: `0x${string}`,
 	hash: Hash,
 	metadata: TMetadata,
+	source: TSource,
 	chainId: number | undefined,
 	broadcastTimestampMs: number,
-): KnownTrackedTransaction<TMetadata> {
+): KnownTrackedTransaction<TMetadata, TSource> {
 	const base = {
 		known: true as const,
 		hash,
@@ -294,6 +330,7 @@ function createKnownTrackedTransactionFromRaw<TMetadata>(
 		data: parsedTx.data ?? '0x',
 		broadcastTimestampMs,
 		metadata,
+		source,
 	};
 
 	// Determine transaction type from parsed tx
@@ -428,7 +465,7 @@ type InferAccount<T> =
 /**
  * Builder interface returned by createTrackedWalletClient for the curried API.
  */
-export interface TrackedWalletClientBuilder<TMetadata> {
+export interface TrackedWalletClientBuilder<TMetadata, TSource = undefined> {
 	/**
 	 * Create the tracked wallet client using the provided wallet and public clients.
 	 *
@@ -443,7 +480,8 @@ export interface TrackedWalletClientBuilder<TMetadata> {
 		TMetadata,
 		InferTransport<TClient>,
 		InferChain<TClient>,
-		InferAccount<TClient>
+		InferAccount<TClient>,
+		TSource
 	>;
 }
 
@@ -452,7 +490,10 @@ export interface TrackedWalletClientBuilder<TMetadata> {
  * This builder returns a TrackedWalletClientAutoPopulate that auto-populates operation, functionName and args.
  * TMetadata must be a type where FunctionCallMetadata is assignable to it.
  */
-export interface TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+export interface TrackedWalletClientAutoPopulateBuilder<
+	TMetadata,
+	TSource = undefined,
+> {
 	/**
 	 * Create the tracked wallet client using the provided wallet and public clients.
 	 * writeContract and writeContractSync will automatically populate operation, functionName and args.
@@ -468,7 +509,8 @@ export interface TrackedWalletClientAutoPopulateBuilder<TMetadata> {
 		TMetadata,
 		InferTransport<TClient>,
 		InferChain<TClient>,
-		InferAccount<TClient>
+		InferAccount<TClient>,
+		TSource
 	>;
 }
 
@@ -482,6 +524,12 @@ export interface TrackedWalletClientAutoPopulateBuilder<TMetadata> {
  * - Event emission for tracking
  *
  * @typeParam TMetadata - The metadata type. Use `MyMeta | undefined` to make metadata optional.
+ * @typeParam TSource - An opaque marker of which signing route this client is.
+ *   Defaults to `undefined` (no source). When it does not include `undefined`,
+ *   the `source` option is mandatory. It must always be passed explicitly:
+ *   inference from the option value is deliberately blocked, so passing a
+ *   `source` without also declaring TSource is an error rather than a silently
+ *   widened type.
  * @returns A builder with a `.using()` method to provide the wallet and public clients
  *
  * @example
@@ -502,12 +550,32 @@ export interface TrackedWalletClientAutoPopulateBuilder<TMetadata> {
  * type MyMetadata = OperationMetadata & { purpose: string };
  * const tracked = createTrackedWalletClient<MyMetadata>({ populateMetadata: true })
  *   .using(walletClient, publicClient);
+ *
+ * // With an opaque source marking which signing route this client is.
+ * // Non-undefined TSource makes the `source` option mandatory.
+ * type MySource = 'connected-wallet' | 'local-signer' | 'payer-wallet';
+ * const tracked = createTrackedWalletClient<{purpose: string}, MySource>({
+ *   source: 'local-signer',
+ * }).using(walletClient, publicClient);
+ *
+ * // ...or as a thunk, re-evaluated at every broadcast
+ * const tracked = createTrackedWalletClient<{purpose: string}, MySource>({
+ *   source: () => currentRoute(),
+ * }).using(walletClient, publicClient);
  * ```
  */
-// Overload 1: Standard mode, no options
-export function createTrackedWalletClient<
-	TMetadata,
->(): TrackedWalletClientBuilder<TMetadata>;
+// Overload 1: Standard mode. The options argument is required only when
+// TSource does not include undefined.
+export function createTrackedWalletClient<TMetadata, TSource = undefined>(
+	...args: undefined extends TSource
+		? [
+				options?: CreateTrackedWalletClientOptions<
+					false,
+					NoInferSource<TSource>
+				>,
+			]
+		: [options: CreateTrackedWalletClientOptions<false, NoInferSource<TSource>>]
+): TrackedWalletClientBuilder<TMetadata, TSource>;
 
 // Overload 2: Auto-populate mode with default PopulatedMetadata
 export function createTrackedWalletClient(
@@ -515,23 +583,31 @@ export function createTrackedWalletClient(
 ): TrackedWalletClientAutoPopulateBuilder<PopulatedMetadata>;
 
 // Overload 3: Auto-populate mode with custom metadata (must allow FunctionCallMetadata)
-export function createTrackedWalletClient<TMetadata>(
-	options: CreateTrackedWalletClientOptions<true>,
-): TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+export function createTrackedWalletClient<TMetadata, TSource = undefined>(
+	options: CreateTrackedWalletClientOptions<true, NoInferSource<TSource>>,
+): TrackedWalletClientAutoPopulateBuilder<TMetadata, TSource>;
 
 // Implementation
-export function createTrackedWalletClient<TMetadata>(
-	options?: CreateTrackedWalletClientOptions<boolean>,
-):
-	| TrackedWalletClientBuilder<TMetadata>
-	| TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+export function createTrackedWalletClient<
+	TMetadata,
+	TSource = undefined,
+>(options?: {
+	populateMetadata?: boolean;
+	clock?: () => number;
+	source?: TSource | (() => TSource);
+}):
+	| TrackedWalletClientBuilder<TMetadata, TSource>
+	| TrackedWalletClientAutoPopulateBuilder<TMetadata, TSource> {
 	const populateMetadata = options?.populateMetadata ?? false;
 	const clock = options?.clock ?? Date.now;
+	// Kept unresolved: a thunk is evaluated at each broadcast, not here.
+	const sourceOption = options?.source;
 
 	if (populateMetadata) {
-		return createAutoPopulateBuilder<TMetadata>(
+		return createAutoPopulateBuilder<TMetadata, TSource>(
 			clock,
-		) as TrackedWalletClientAutoPopulateBuilder<TMetadata>;
+			sourceOption,
+		) as TrackedWalletClientAutoPopulateBuilder<TMetadata, TSource>;
 	}
 
 	return {
@@ -542,7 +618,8 @@ export function createTrackedWalletClient<TMetadata>(
 			TMetadata,
 			InferTransport<TClient>,
 			InferChain<TClient>,
-			InferAccount<TClient>
+			InferAccount<TClient>,
+			TSource
 		> {
 			// Type aliases for internal use
 			type TTransport = InferTransport<TClient>;
@@ -551,8 +628,8 @@ export function createTrackedWalletClient<TMetadata>(
 
 			// Create emitter for transaction events
 			const emitter = new Emitter<{
-				'transaction:broadcasted': TrackedTransaction<TMetadata>;
-				'transaction:fetched': KnownTrackedTransaction<TMetadata>;
+				'transaction:broadcasted': TrackedTransaction<TMetadata, TSource>;
+				'transaction:fetched': KnownTrackedTransaction<TMetadata, TSource>;
 			}>();
 
 			/**
@@ -614,6 +691,7 @@ export function createTrackedWalletClient<TMetadata>(
 			async function fetchAndEmitFullData(
 				hash: Hash,
 				metadata: TMetadata,
+				source: TSource,
 				broadcastTimestampMs: number,
 			): Promise<void> {
 				try {
@@ -621,6 +699,7 @@ export function createTrackedWalletClient<TMetadata>(
 					const knownTx = createKnownTrackedTransaction(
 						tx,
 						metadata,
+						source,
 						broadcastTimestampMs,
 					);
 					emitter.emit('transaction:fetched', knownTx);
@@ -649,6 +728,9 @@ export function createTrackedWalletClient<TMetadata>(
 			}): Promise<R> {
 				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
 				const broadcastTimestampMs = clock();
+				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
+				// A thunk is re-evaluated on every send, never captured once.
+				const source = resolveSource(sourceOption);
 
 				// Extract common context
 				const {from, intendedNonce} = await extractTransactionContext(args);
@@ -669,13 +751,14 @@ export function createTrackedWalletClient<TMetadata>(
 					intendedNonce,
 					walletClient.chain?.id,
 					metadata,
+					source,
 					broadcastTimestampMs,
 					intendedParams,
 				);
 				emitter.emit('transaction:broadcasted', unknownTx);
 
 				// Fire-and-forget: fetch full data and emit transaction:fetched
-				fetchAndEmitFullData(hash, metadata, broadcastTimestampMs);
+				fetchAndEmitFullData(hash, metadata, source, broadcastTimestampMs);
 
 				return result;
 			}
@@ -693,6 +776,9 @@ export function createTrackedWalletClient<TMetadata>(
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
 				const broadcastTimestampMs = clock();
+				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
+				// A thunk is re-evaluated on every send, never captured once.
+				const source = resolveSource(sourceOption);
 
 				const from = await recoverTransactionAddress({serializedTransaction});
 
@@ -708,6 +794,7 @@ export function createTrackedWalletClient<TMetadata>(
 					from,
 					hash,
 					metadata,
+					source,
 					walletClient.chain?.id,
 					broadcastTimestampMs,
 				);
@@ -906,9 +993,10 @@ export function createTrackedWalletClient<TMetadata>(
  * Create an auto-populate builder for TrackedWalletClient.
  * This builder auto-populates operation, functionName and args in writeContract metadata.
  */
-function createAutoPopulateBuilder<TMetadata>(
+function createAutoPopulateBuilder<TMetadata, TSource>(
 	clock: () => number,
-): TrackedWalletClientAutoPopulateBuilder<TMetadata> {
+	sourceOption: TSource | (() => TSource) | undefined,
+): TrackedWalletClientAutoPopulateBuilder<TMetadata, TSource> {
 	return {
 		using<TClient extends WalletClient>(
 			walletClient: TClient,
@@ -917,7 +1005,8 @@ function createAutoPopulateBuilder<TMetadata>(
 			TMetadata,
 			InferTransport<TClient>,
 			InferChain<TClient>,
-			InferAccount<TClient>
+			InferAccount<TClient>,
+			TSource
 		> {
 			// Type aliases for internal use
 			type TTransport = InferTransport<TClient>;
@@ -926,8 +1015,8 @@ function createAutoPopulateBuilder<TMetadata>(
 
 			// Create emitter for transaction events
 			const emitter = new Emitter<{
-				'transaction:broadcasted': TrackedTransaction<TMetadata>;
-				'transaction:fetched': KnownTrackedTransaction<TMetadata>;
+				'transaction:broadcasted': TrackedTransaction<TMetadata, TSource>;
+				'transaction:fetched': KnownTrackedTransaction<TMetadata, TSource>;
 			}>();
 
 			/**
@@ -975,6 +1064,7 @@ function createAutoPopulateBuilder<TMetadata>(
 			async function fetchAndEmitFullData(
 				hash: Hash,
 				metadata: TMetadata,
+				source: TSource,
 				broadcastTimestampMs: number,
 			): Promise<void> {
 				try {
@@ -982,6 +1072,7 @@ function createAutoPopulateBuilder<TMetadata>(
 					const knownTx = createKnownTrackedTransaction(
 						tx,
 						metadata,
+						source,
 						broadcastTimestampMs,
 					);
 					emitter.emit('transaction:fetched', knownTx);
@@ -1039,6 +1130,9 @@ function createAutoPopulateBuilder<TMetadata>(
 			}): Promise<R> {
 				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
 				const broadcastTimestampMs = clock();
+				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
+				// A thunk is re-evaluated on every send, never captured once.
+				const source = resolveSource(sourceOption);
 
 				const {from, intendedNonce} = await extractTransactionContext(args);
 
@@ -1057,13 +1151,14 @@ function createAutoPopulateBuilder<TMetadata>(
 					intendedNonce,
 					walletClient.chain?.id,
 					metadata,
+					source,
 					broadcastTimestampMs,
 					intendedParams,
 				);
 				emitter.emit('transaction:broadcasted', unknownTx);
 
 				// Fire-and-forget: fetch full data and emit transaction:fetched
-				fetchAndEmitFullData(hash, metadata, broadcastTimestampMs);
+				fetchAndEmitFullData(hash, metadata, source, broadcastTimestampMs);
 
 				return result;
 			}
@@ -1081,6 +1176,9 @@ function createAutoPopulateBuilder<TMetadata>(
 			}): Promise<R> {
 				const {serializedTransaction, metadata, execute, extractHash} = args;
 				const broadcastTimestampMs = clock();
+				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
+				// A thunk is re-evaluated on every send, never captured once.
+				const source = resolveSource(sourceOption);
 
 				const from = await recoverTransactionAddress({serializedTransaction});
 				const parsedTx = parseTransaction(serializedTransaction);
@@ -1095,6 +1193,7 @@ function createAutoPopulateBuilder<TMetadata>(
 					from,
 					hash,
 					metadata,
+					source,
 					walletClient.chain?.id,
 					broadcastTimestampMs,
 				);

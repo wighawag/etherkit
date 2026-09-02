@@ -1111,7 +1111,10 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			// Wait for the async fetch to complete
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
 
 			// transaction:broadcasted should have known=false
 			expect(broadcastListener).toHaveBeenCalledTimes(1);
@@ -1198,8 +1201,10 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			// Wait for async fetch
-			await new Promise((resolve) => setTimeout(resolve, 500));
-			expect(fetchedListener).toHaveBeenCalledTimes(1);
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
 
 			// Unsubscribe
 			trackedClient.off('transaction:fetched', fetchedListener);
@@ -1210,12 +1215,13 @@ describe('TrackedTransaction Discriminated Union', () => {
 				value: parseEther('0.001'),
 			});
 
-			// Wait for potential async fetch
+			// Asserting an absence: give the fetch every chance to fire first by
+			// waiting for the tx to be mined, then a further grace period.
+			await publicClient.waitForTransactionReceipt({hash: txHash2});
 			await new Promise((resolve) => setTimeout(resolve, 500));
 			expect(fetchedListener).toHaveBeenCalledTimes(1); // Still 1, not 2
 
 			await publicClient.waitForTransactionReceipt({hash: txHash1});
-			await publicClient.waitForTransactionReceipt({hash: txHash2});
 		});
 	});
 
@@ -1307,6 +1313,364 @@ describe('TrackedTransaction Discriminated Union', () => {
 			}
 
 			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+});
+
+/**
+ * The source is an opaque marker of which signing route produced a transaction.
+ * The tracker carries it and never interprets it.
+ */
+describe('transaction source', () => {
+	type TestSource = 'connected-wallet' | 'local-signer' | 'payer-wallet';
+
+	let publicClient: PublicClient;
+	let walletClient: WalletClient<Transport, Chain, Account>;
+	let account: ReturnType<typeof privateKeyToAccount>;
+
+	beforeAll(() => {
+		account = privateKeyToAccount(TEST_PRIVATE_KEY);
+
+		publicClient = createPublicClient({
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		walletClient = createWalletClient({
+			account,
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+	});
+
+	function clientWithSource(
+		source: TestSource | (() => TestSource),
+	): TrackedWalletClient<TestMetadata, Transport, Chain, Account, TestSource> {
+		return createTrackedWalletClient<TestMetadata, TestSource>({
+			source,
+		}).using(walletClient, publicClient);
+	}
+
+	async function signRawTransaction() {
+		const nonce = await publicClient.getTransactionCount({
+			address: account.address,
+			blockTag: 'pending',
+		});
+		return await walletClient.signTransaction({
+			to: RECIPIENT_ADDRESS,
+			value: parseEther('0.01'),
+			nonce,
+			gas: 21000n,
+			maxFeePerGas: parseEther('0.000000002'),
+			maxPriorityFeePerGas: parseEther('0.000000001'),
+		});
+	}
+
+	describe('value source', () => {
+		it('should include the source in transaction:broadcasted', async () => {
+			const trackedClient = clientWithSource('local-signer');
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {id: 'source-broadcasted'},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata, TestSource> =
+				listener.mock.calls[0][0];
+			expect(event.source).toBe('local-signer');
+			// source is a sibling of metadata, never nested inside it
+			expect(event.metadata).toEqual({id: 'source-broadcasted'});
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should include the source in transaction:fetched (survives the unknown-to-known rebuild)', async () => {
+			const trackedClient = clientWithSource('payer-wallet');
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {id: 'source-fetched'},
+			});
+
+			// Wait for the async fetch to complete
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
+
+			const event: KnownTrackedTransaction<TestMetadata, TestSource> =
+				fetchedListener.mock.calls[0][0];
+			expect(event.known).toBe(true);
+			expect(event.hash).toBe(txHash);
+			expect(event.source).toBe('payer-wallet');
+
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should include the source on both events for sendRawTransaction', async () => {
+			const trackedClient = clientWithSource('connected-wallet');
+			const broadcastListener = vi.fn();
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:broadcasted', broadcastListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				metadata: {id: 'source-raw'},
+			});
+
+			expect(broadcastListener).toHaveBeenCalledTimes(1);
+			expect(fetchedListener).toHaveBeenCalledTimes(1);
+
+			const broadcastEvent: TrackedTransaction<TestMetadata, TestSource> =
+				broadcastListener.mock.calls[0][0];
+			const fetchedEvent: KnownTrackedTransaction<TestMetadata, TestSource> =
+				fetchedListener.mock.calls[0][0];
+			expect(broadcastEvent.source).toBe('connected-wallet');
+			expect(fetchedEvent.source).toBe('connected-wallet');
+
+			trackedClient.off('transaction:broadcasted', broadcastListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should include the source for writeContractSync', async () => {
+			const trackedClient = clientWithSource('local-signer');
+			const deployHash = await walletClient.deployContract({
+				abi: TEST_CONTRACT_ABI,
+				bytecode: TEST_CONTRACT_BYTECODE,
+				args: [account.address, parseEther('1000')],
+			});
+			const deployReceipt = await publicClient.waitForTransactionReceipt({
+				hash: deployHash,
+			});
+			const tokenAddress = deployReceipt.contractAddress!;
+
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			await trackedClient.writeContractSync({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('10')],
+				metadata: {id: 'source-write-contract'},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata, TestSource> =
+				listener.mock.calls[0][0];
+			expect(event.source).toBe('local-signer');
+
+			trackedClient.off('transaction:broadcasted', listener);
+		});
+
+		it('should include the source in auto-populate mode, on both events', async () => {
+			const trackedClient = createTrackedWalletClient<
+				PopulatedMetadata,
+				TestSource
+			>({
+				populateMetadata: true,
+				source: 'payer-wallet',
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {type: 'unknown', name: 'transfer', data: []},
+			});
+
+			// Wait for the async fetch to complete
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata, TestSource> =
+				listener.mock.calls[0][0];
+			expect(event.source).toBe('payer-wallet');
+
+			// the auto-populate builder rebuilds the fetched tx in its own copy of
+			// the code path, so it is checked separately from the standard builder
+			const fetchedEvent: KnownTrackedTransaction<
+				PopulatedMetadata,
+				TestSource
+			> = fetchedListener.mock.calls[0][0];
+			expect(fetchedEvent.known).toBe(true);
+			expect(fetchedEvent.hash).toBe(txHash);
+			expect(fetchedEvent.source).toBe('payer-wallet');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should include the source on the auto-populate sendRawTransaction path', async () => {
+			const trackedClient = createTrackedWalletClient<
+				PopulatedMetadata,
+				TestSource
+			>({
+				populateMetadata: true,
+				source: 'connected-wallet',
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				metadata: {type: 'unknown', name: 'raw-transfer', data: []},
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata, TestSource> =
+				listener.mock.calls[0][0];
+			expect(event.known).toBe(true);
+			expect(event.source).toBe('connected-wallet');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('thunk source', () => {
+		it('should not evaluate the thunk at construction, only at dispatch', async () => {
+			const thunk = vi.fn(() => 'local-signer' as const);
+
+			const trackedClient = createTrackedWalletClient<TestMetadata, TestSource>(
+				{source: thunk},
+			).using(walletClient, publicClient);
+
+			// Constructing the client (and the builder) must not call the thunk
+			expect(thunk).not.toHaveBeenCalled();
+
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+			});
+
+			expect(thunk).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata, TestSource> =
+				listener.mock.calls[0][0];
+			expect(event.source).toBe('local-signer');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('should re-evaluate the thunk on every send', async () => {
+			const sources: TestSource[] = ['connected-wallet', 'payer-wallet'];
+			let index = 0;
+			const trackedClient = createTrackedWalletClient<TestMetadata, TestSource>(
+				{
+					source: () => sources[index++],
+				},
+			).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash1 = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+			});
+			const txHash2 = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+			});
+
+			expect(listener).toHaveBeenCalledTimes(2);
+			const first: TrackedTransaction<TestMetadata, TestSource> =
+				listener.mock.calls[0][0];
+			const second: TrackedTransaction<TestMetadata, TestSource> =
+				listener.mock.calls[1][0];
+			expect(first.source).toBe('connected-wallet');
+			expect(second.source).toBe('payer-wallet');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash1});
+			await publicClient.waitForTransactionReceipt({hash: txHash2});
+		});
+
+		it('should re-evaluate the thunk for sendRawTransaction too', async () => {
+			const thunk = vi.fn(() => 'payer-wallet' as const);
+			const trackedClient = createTrackedWalletClient<TestMetadata, TestSource>(
+				{source: thunk},
+			).using(walletClient, publicClient);
+
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+			});
+
+			expect(thunk).toHaveBeenCalledTimes(1);
+			const event: KnownTrackedTransaction<TestMetadata, TestSource> =
+				fetchedListener.mock.calls[0][0];
+			expect(event.source).toBe('payer-wallet');
+
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('default (no source)', () => {
+		it('should carry an undefined source when TSource is left at its default', async () => {
+			const trackedClient = createTrackedWalletClient<TestMetadata>().using(
+				walletClient,
+				publicClient,
+			);
+
+			const broadcastListener = vi.fn();
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:broadcasted', broadcastListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+			});
+
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
+
+			const broadcastEvent: TrackedTransaction<TestMetadata> =
+				broadcastListener.mock.calls[0][0];
+			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
+				fetchedListener.mock.calls[0][0];
+			// the field is present and undefined, not missing
+			expect('source' in broadcastEvent).toBe(true);
+			expect('source' in fetchedEvent).toBe(true);
+			expect(broadcastEvent.source).toBeUndefined();
+			expect(fetchedEvent.source).toBeUndefined();
+
+			trackedClient.off('transaction:broadcasted', broadcastListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 	});

@@ -48,11 +48,30 @@ export type UnknownTypeMetadata = {
 export type PopulatedMetadata = FunctionCallMetadata | UnknownTypeMetadata;
 
 /**
+ * Conditional type that makes the `source` construction option required or
+ * optional based on TSource. Mirrors {@link MetadataField}.
+ *
+ * If TSource includes undefined (the default), `source` is optional.
+ * Otherwise a client cannot be constructed without supplying one.
+ *
+ * The value can be given directly or as a thunk. The thunk is evaluated at
+ * broadcast time, once per send, so a client whose signing route can change
+ * over its lifetime always stamps the route that actually signed.
+ *
+ * Note: a TSource that is itself a function type cannot be distinguished from
+ * a thunk at runtime - wrap it (e.g. `{fn: ...}`) if you need one.
+ */
+export type SourceField<TSource> = undefined extends TSource
+	? {source?: TSource | (() => TSource)}
+	: {source: TSource | (() => TSource)};
+
+/**
  * Options for creating a tracked wallet client.
  */
-export interface CreateTrackedWalletClientOptions<
+export type CreateTrackedWalletClientOptions<
 	TPopulate extends boolean = false,
-> {
+	TSource = undefined,
+> = {
 	/**
 	 * When true, writeContract and writeContractSync automatically populate
 	 * operation, functionName and args in the metadata from the contract call parameters.
@@ -65,7 +84,7 @@ export interface CreateTrackedWalletClientOptions<
 	 * Defaults to Date.now.
 	 */
 	clock?: () => number;
-}
+} & SourceField<TSource>;
 
 /**
  * Block tags that can be used to specify nonce fetching strategy
@@ -113,11 +132,19 @@ export type IntendedGasParameters = {
  * Common fields for all tracked transactions.
  * All field paths are stable - you can always access tx.field
  */
-type CommonTrackedFields<TMetadata> = {
+type CommonTrackedFields<TMetadata, TSource = undefined> = {
 	readonly hash: `0x${string}`;
 	readonly from: `0x${string}`;
 	readonly broadcastTimestampMs: number;
 	readonly metadata: TMetadata;
+	/**
+	 * Opaque marker of which signing route produced this transaction.
+	 * Supplied once at client construction and carried verbatim: the tracker
+	 * never inspects or interprets it. Sibling of (never nested inside)
+	 * metadata, since it is a fact observed at dispatch rather than something
+	 * the application said the transaction means.
+	 */
+	readonly source: TSource;
 	readonly to: `0x${string}` | null;
 	readonly value: bigint;
 	readonly data: `0x${string}`;
@@ -135,39 +162,41 @@ type CommonTrackedFields<TMetadata> = {
  * - accessList at top level, presence depends on txType
  * - gasParameters at top level with txType-specific fields
  */
-export type KnownTrackedTransaction<TMetadata> =
-	CommonTrackedFields<TMetadata> & {
-		readonly known: true;
-	} & (
-			| {
-					readonly txType: 'eip1559';
-					readonly chainId: number;
-					readonly accessList?: AccessList;
-					readonly gasParameters: {
-						readonly gas: bigint;
-						readonly maxFeePerGas: bigint;
-						readonly maxPriorityFeePerGas: bigint;
-					};
-			  }
-			| {
-					readonly txType: 'legacy';
-					readonly chainId?: number;
-					// accessList not available for legacy
-					readonly gasParameters: {
-						readonly gas: bigint;
-						readonly gasPrice: bigint;
-					};
-			  }
-			| {
-					readonly txType: 'eip2930';
-					readonly chainId: number;
-					readonly accessList: AccessList;
-					readonly gasParameters: {
-						readonly gas: bigint;
-						readonly gasPrice: bigint;
-					};
-			  }
-		);
+export type KnownTrackedTransaction<
+	TMetadata,
+	TSource = undefined,
+> = CommonTrackedFields<TMetadata, TSource> & {
+	readonly known: true;
+} & (
+		| {
+				readonly txType: 'eip1559';
+				readonly chainId: number;
+				readonly accessList?: AccessList;
+				readonly gasParameters: {
+					readonly gas: bigint;
+					readonly maxFeePerGas: bigint;
+					readonly maxPriorityFeePerGas: bigint;
+				};
+		  }
+		| {
+				readonly txType: 'legacy';
+				readonly chainId?: number;
+				// accessList not available for legacy
+				readonly gasParameters: {
+					readonly gas: bigint;
+					readonly gasPrice: bigint;
+				};
+		  }
+		| {
+				readonly txType: 'eip2930';
+				readonly chainId: number;
+				readonly accessList: AccessList;
+				readonly gasParameters: {
+					readonly gas: bigint;
+					readonly gasPrice: bigint;
+				};
+		  }
+	);
 
 /**
  * A partially known tracked transaction with intended/provided values.
@@ -184,58 +213,60 @@ export type KnownTrackedTransaction<TMetadata> =
  * - gasPrice only → 'legacy'
  * - undefined → wallet will determine type
  */
-export type UnknownTrackedTransaction<TMetadata> =
-	CommonTrackedFields<TMetadata> & {
-		readonly known: false;
-	} & (
-			| {
-					// txType inferred as eip1559
-					readonly txType: 'eip1559';
-					readonly chainId?: number;
-					readonly accessList?: AccessList;
-					readonly gasParameters: {
-						readonly gas?: bigint;
-						readonly maxFeePerGas?: bigint;
-						readonly maxPriorityFeePerGas?: bigint;
-					};
-			  }
-			| {
-					// txType inferred as legacy
-					readonly txType: 'legacy';
-					readonly chainId?: number;
-					// no accessList for legacy
-					readonly gasParameters: {
-						readonly gas?: bigint;
-						readonly gasPrice?: bigint;
-					};
-			  }
-			| {
-					// txType inferred as eip2930
-					readonly txType: 'eip2930';
-					readonly chainId?: number;
-					readonly accessList?: AccessList;
-					readonly gasParameters: {
-						readonly gas?: bigint;
-						readonly gasPrice?: bigint;
-					};
-			  }
-			| {
-					// txType unknown - wallet will decide
-					readonly txType?: undefined;
-					readonly chainId?: number;
-					readonly accessList?: AccessList;
-					readonly gasParameters: IntendedGasParameters;
-			  }
-		);
+export type UnknownTrackedTransaction<
+	TMetadata,
+	TSource = undefined,
+> = CommonTrackedFields<TMetadata, TSource> & {
+	readonly known: false;
+} & (
+		| {
+				// txType inferred as eip1559
+				readonly txType: 'eip1559';
+				readonly chainId?: number;
+				readonly accessList?: AccessList;
+				readonly gasParameters: {
+					readonly gas?: bigint;
+					readonly maxFeePerGas?: bigint;
+					readonly maxPriorityFeePerGas?: bigint;
+				};
+		  }
+		| {
+				// txType inferred as legacy
+				readonly txType: 'legacy';
+				readonly chainId?: number;
+				// no accessList for legacy
+				readonly gasParameters: {
+					readonly gas?: bigint;
+					readonly gasPrice?: bigint;
+				};
+		  }
+		| {
+				// txType inferred as eip2930
+				readonly txType: 'eip2930';
+				readonly chainId?: number;
+				readonly accessList?: AccessList;
+				readonly gasParameters: {
+					readonly gas?: bigint;
+					readonly gasPrice?: bigint;
+				};
+		  }
+		| {
+				// txType unknown - wallet will decide
+				readonly txType?: undefined;
+				readonly chainId?: number;
+				readonly accessList?: AccessList;
+				readonly gasParameters: IntendedGasParameters;
+		  }
+	);
 
 /**
  * A tracked transaction - discriminated by 'known' field.
  * - known=true: Values are confirmed from chain fetch
  * - known=false: Values are intended/provided, may differ from actual
  */
-export type TrackedTransaction<TMetadata> =
-	| KnownTrackedTransaction<TMetadata>
-	| UnknownTrackedTransaction<TMetadata>;
+export type TrackedTransaction<TMetadata, TSource = undefined> =
+	| KnownTrackedTransaction<TMetadata, TSource>
+	| UnknownTrackedTransaction<TMetadata, TSource>;
 
 /**
  * Extended WriteContractParameters with metadata and flexible nonce.
@@ -410,6 +441,7 @@ export interface TrackedWalletClient<
 	TTransport extends Transport = Transport,
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
+	TSource = undefined,
 > {
 	/**
 	 * The underlying wallet client.
@@ -532,9 +564,11 @@ export interface TrackedWalletClient<
 	 * @param listener - Callback function receiving the event data
 	 * @returns Unsubscribe function
 	 */
-	on<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+	on<TEvent extends keyof TrackedWalletClientEvents<TMetadata, TSource>>(
 		event: TEvent,
-		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
+		listener: (
+			data: TrackedWalletClientEvents<TMetadata, TSource>[TEvent],
+		) => void,
 	): () => void;
 
 	/**
@@ -542,25 +576,27 @@ export interface TrackedWalletClient<
 	 * @param event - The event type to unsubscribe from
 	 * @param listener - The same listener function passed to on
 	 */
-	off<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+	off<TEvent extends keyof TrackedWalletClientEvents<TMetadata, TSource>>(
 		event: TEvent,
-		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
+		listener: (
+			data: TrackedWalletClientEvents<TMetadata, TSource>[TEvent],
+		) => void,
 	): void;
 }
 
 /**
  * Event map for TrackedWalletClient events.
  */
-export type TrackedWalletClientEvents<TMetadata> = {
+export type TrackedWalletClientEvents<TMetadata, TSource = undefined> = {
 	/**
 	 * Emitted immediately after a transaction is successfully broadcast.
 	 */
-	'transaction:broadcasted': TrackedTransaction<TMetadata>;
+	'transaction:broadcasted': TrackedTransaction<TMetadata, TSource>;
 	/**
 	 * Emitted when full transaction data is successfully fetched from chain.
 	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
 	 */
-	'transaction:fetched': KnownTrackedTransaction<TMetadata>;
+	'transaction:fetched': KnownTrackedTransaction<TMetadata, TSource>;
 };
 
 /**
@@ -573,6 +609,7 @@ export interface TrackedWalletClientAutoPopulate<
 	TTransport extends Transport = Transport,
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
+	TSource = undefined,
 > {
 	/**
 	 * The underlying wallet client.
@@ -697,9 +734,11 @@ export interface TrackedWalletClientAutoPopulate<
 	 * @param listener - Callback function receiving the event data
 	 * @returns Unsubscribe function
 	 */
-	on<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+	on<TEvent extends keyof TrackedWalletClientEvents<TMetadata, TSource>>(
 		event: TEvent,
-		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
+		listener: (
+			data: TrackedWalletClientEvents<TMetadata, TSource>[TEvent],
+		) => void,
 	): () => void;
 
 	/**
@@ -707,9 +746,11 @@ export interface TrackedWalletClientAutoPopulate<
 	 * @param event - The event type to unsubscribe from
 	 * @param listener - The same listener function passed to on
 	 */
-	off<TEvent extends keyof TrackedWalletClientEvents<TMetadata>>(
+	off<TEvent extends keyof TrackedWalletClientEvents<TMetadata, TSource>>(
 		event: TEvent,
-		listener: (data: TrackedWalletClientEvents<TMetadata>[TEvent]) => void,
+		listener: (
+			data: TrackedWalletClientEvents<TMetadata, TSource>[TEvent],
+		) => void,
 	): void;
 }
 
@@ -724,6 +765,7 @@ export interface TrackedWalletClientAutoPopulate<
  * @typeParam TTransport - The transport type (default: Transport)
  * @typeParam TChain - The chain type (default: Chain | undefined)
  * @typeParam TAccount - The account type (default: Account | undefined)
+ * @typeParam TSource - The opaque signing-route marker (default: undefined)
  *
  * @example
  * ```typescript
@@ -741,6 +783,17 @@ export interface TrackedWalletClientAutoPopulate<
  * type MyExtendedMetadata = FunctionCallMetadata & { priority: number };
  * type MyExtendedClient = TrackedWalletClientType<MyExtendedMetadata, true>;
  *
+ * // With an opaque source describing which signing route produced the tx
+ * type MySource = 'connected-wallet' | 'local-signer' | 'payer-wallet';
+ * type MySourcedClient = TrackedWalletClientType<
+ *   {purpose: string},
+ *   false,
+ *   Transport,
+ *   Chain | undefined,
+ *   Account | undefined,
+ *   MySource
+ * >;
+ *
  * // With specific wallet client types
  * type MySpecificClient = TrackedWalletClientType<
  *   {purpose: string},
@@ -757,6 +810,13 @@ export type TrackedWalletClientType<
 	TTransport extends Transport = Transport,
 	TChain extends Chain | undefined = Chain | undefined,
 	TAccount extends Account | undefined = Account | undefined,
+	TSource = undefined,
 > = TAutoPopulate extends true
-	? TrackedWalletClientAutoPopulate<TMetadata, TTransport, TChain, TAccount>
-	: TrackedWalletClient<TMetadata, TTransport, TChain, TAccount>;
+	? TrackedWalletClientAutoPopulate<
+			TMetadata,
+			TTransport,
+			TChain,
+			TAccount,
+			TSource
+		>
+	: TrackedWalletClient<TMetadata, TTransport, TChain, TAccount, TSource>;
