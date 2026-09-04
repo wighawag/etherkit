@@ -179,7 +179,7 @@ describe('Dropped Transaction Scenarios', () => {
 			assertIntentDropped(droppedIntent!);
 		});
 
-		it('dropped-timing: Drop detected with correct final timestamp', async () => {
+		it('dropped-finality: Drop is final once the finalized nonce passed it', async () => {
 			const nonce = 5;
 			const broadcastTimestampMs = Date.now();
 
@@ -198,14 +198,12 @@ describe('Dropped Transaction Scenarios', () => {
 			setup.controller.setAccountNonce(account, nonce + 1);
 			await processAndWait(setup);
 
-			// Should be dropped with final timestamp
+			// `final` is a boolean: the finalized-block nonce is past this tx's
+			// nonce, so the drop can no longer be undone. It carries no timestamp.
 			const droppedIntent = getLatestEmissionForIntent(setup, intentId);
 			assertIntentDropped(droppedIntent!);
-			expect(droppedIntent?.state?.final).toBeDefined();
-			// Final should be the broadcast timestamp (from the tx)
-			expect(droppedIntent?.state?.final).toBe(
-				Math.floor(broadcastTimestampMs / 1000),
-			);
+			expect(droppedIntent?.state?.final).toBe(true);
+			expect(droppedIntent?.state?.blockTimestamp).toBeUndefined();
 		});
 	});
 

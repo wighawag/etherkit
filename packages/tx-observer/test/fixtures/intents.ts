@@ -36,6 +36,7 @@ export function createIntent(
 	return {
 		transactions,
 		state: overrides.state,
+		expectedUpdate: overrides.expectedUpdate,
 	};
 }
 
@@ -62,17 +63,12 @@ export function createBroadcastedIntent(
 ): TransactionIntent {
 	const tx = createBroadcastedTx({
 		...txOverrides,
-		state: {inclusion: 'InMemPool', final: undefined, status: undefined},
+		state: {inclusion: 'InMemPool'},
 	});
 	return createIntent({
 		...intentOverrides,
 		transactions: [tx],
-		state: {
-			inclusion: 'InMemPool',
-			final: undefined,
-			status: undefined,
-			attemptIndex: undefined,
-		},
+		state: {inclusion: 'InMemPool'},
 	});
 }
 
@@ -87,7 +83,8 @@ export function createIncludedIntent(
 		...txOverrides,
 		state: {
 			inclusion: 'Included',
-			status: 'Success',
+			outcome: 'Success',
+			final: false,
 		},
 	});
 	return createIntent({
@@ -95,8 +92,9 @@ export function createIncludedIntent(
 		transactions: [tx],
 		state: {
 			inclusion: 'Included',
-			status: 'Success',
-			attemptIndex: 0,
+			outcome: 'Success',
+			final: false,
+			via: {kind: 'attempt', attemptIndex: 0},
 		},
 	});
 }
@@ -112,7 +110,8 @@ export function createFailedIntent(
 		...txOverrides,
 		state: {
 			inclusion: 'Included',
-			status: 'Failure',
+			outcome: 'Failure',
+			final: false,
 		},
 	});
 	return createIntent({
@@ -120,8 +119,9 @@ export function createFailedIntent(
 		transactions: [tx],
 		state: {
 			inclusion: 'Included',
-			status: 'Failure',
-			attemptIndex: 0,
+			outcome: 'Failure',
+			final: false,
+			via: {kind: 'attempt', attemptIndex: 0},
 		},
 	});
 }
@@ -137,8 +137,7 @@ export function createDroppedIntent(
 		...txOverrides,
 		state: {
 			inclusion: 'Dropped',
-			final: txOverrides.state?.final || Date.now(),
-			status: undefined,
+			final: txOverrides.state?.final ?? true,
 		},
 	});
 	return createIntent({
@@ -146,9 +145,7 @@ export function createDroppedIntent(
 		transactions: [tx],
 		state: {
 			inclusion: 'Dropped',
-			final: tx.state?.final,
-			status: undefined,
-			attemptIndex: undefined,
+			final: tx.state?.inclusion === 'Dropped' ? tx.state.final : false,
 		},
 	});
 }

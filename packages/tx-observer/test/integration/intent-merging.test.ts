@@ -11,6 +11,7 @@ import {
 	assertIntentInclusion,
 	assertIntentIncluded,
 	assertIntentDropped,
+	assertWinningTx,
 } from '../helpers/assertions.js';
 import {resetHashCounter, TEST_ACCOUNT} from '../fixtures/transactions.js';
 import {resetIntentIdCounter, createIntent} from '../fixtures/intents.js';
@@ -79,7 +80,10 @@ describe('Intent Status Merging', () => {
 			// Intent should be Included/Success (one success wins)
 			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
 			assertIntentIncluded(emittedIntent!, 'Success');
-			expect(emittedIntent?.state?.attemptIndex).toBe(0);
+			expect(emittedIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 0,
+			});
 		});
 
 		it('merge-one-included-failure: One tx failed, others pending → Included/Failure', async () => {
@@ -146,7 +150,10 @@ describe('Intent Status Merging', () => {
 			// Success should win over failure
 			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
 			assertIntentIncluded(emittedIntent!, 'Success');
-			expect(emittedIntent?.state?.attemptIndex).toBe(1); // TX2 index
+			expect(emittedIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 1,
+			}); // TX2 index
 		});
 
 		it('merge-all-dropped: All txs dropped → Dropped', async () => {
@@ -270,10 +277,11 @@ describe('Intent Status Merging', () => {
 
 			// attemptIndex should point to TX2 (index 1)
 			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(emittedIntent?.state?.attemptIndex).toBe(1);
-			expect(
-				emittedIntent?.transactions[emittedIntent?.state?.attemptIndex!].hash,
-			).toBe(tx2Hash);
+			expect(emittedIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 1,
+			});
+			assertWinningTx(emittedIntent!, tx2Hash);
 		});
 
 		it('should select first failure if no success', async () => {
@@ -311,7 +319,10 @@ describe('Intent Status Merging', () => {
 
 			// attemptIndex should point to first failure (TX1, index 0)
 			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(emittedIntent?.state?.attemptIndex).toBe(0);
+			expect(emittedIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 0,
+			});
 		});
 
 		it('should update attemptIndex when success arrives after failure', async () => {
@@ -343,7 +354,10 @@ describe('Intent Status Merging', () => {
 			setup.controller.includeTx(tx1Hash, 'failure');
 			await processAndWait(setup);
 			const failedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(failedIntent?.state?.attemptIndex).toBe(0);
+			expect(failedIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 0,
+			});
 
 			// TX2 succeeds
 			setup.controller.includeTx(tx2Hash, 'success');
@@ -351,7 +365,10 @@ describe('Intent Status Merging', () => {
 
 			// attemptIndex should now point to success (TX2)
 			const successIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(successIntent?.state?.attemptIndex).toBe(1);
+			expect(successIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 1,
+			});
 		});
 	});
 
@@ -395,7 +412,7 @@ describe('Intent Status Merging', () => {
 
 			// Intent should be finalized
 			const finalizedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(finalizedIntent?.state?.final).toBeDefined();
+			expect(finalizedIntent?.state?.final).toBe(true);
 		});
 	});
 

@@ -1,16 +1,19 @@
 import {describe, it, expect, beforeEach} from 'vitest';
-import {createTransactionObserver, TransactionIntentEvent} from '../../src';
+import {
+	createTransactionObserver,
+	type TransactionIntentEvent,
+} from '../../src/index.js';
 import {
 	createMockProvider,
 	type MockProviderController,
-} from '../mocks/MockEIP1193Provider';
-import {createBroadcastedTx, createMockTx} from '../fixtures/transactions';
-import {createIntent} from '../fixtures/intents';
+} from '../mocks/MockEIP1193Provider.js';
+import {createBroadcastedTx, createMockTx} from '../fixtures/transactions.js';
+import {createIntent} from '../fixtures/intents.js';
 
 describe('Clear Abort', () => {
 	let controller: MockProviderController;
 	let observer: ReturnType<typeof createTransactionObserver>;
-	let statusEvents: TransactionIntentEvent[];
+	let stateEvents: TransactionIntentEvent[];
 	let updatedEvents: TransactionIntentEvent[];
 
 	const accountA = '0xaaaa000000000000000000000000000000000001' as const;
@@ -32,11 +35,11 @@ describe('Clear Abort', () => {
 			provider,
 		});
 
-		statusEvents = [];
+		stateEvents = [];
 		updatedEvents = [];
 
-		observer.on('intent:status', (event) => {
-			statusEvents.push(event);
+		observer.on('intent:state', (event) => {
+			stateEvents.push(event);
 		});
 		observer.on('intent:updated', (event) => {
 			updatedEvents.push(event);
@@ -84,8 +87,8 @@ describe('Clear Abort', () => {
 
 			await processPromise;
 
-			// Verify no status events were emitted for Account A
-			for (const event of statusEvents) {
+			// Verify no state events were emitted for Account A
+			for (const event of stateEvents) {
 				expect(event.intent.transactions[0].from).not.toBe(accountA);
 			}
 		});
@@ -122,8 +125,8 @@ describe('Clear Abort', () => {
 			await observer.process();
 			unhook();
 
-			// Should have no status events since we cleared before emission
-			expect(statusEvents.length).toBe(0);
+			// Should have no state events since we cleared before emission
+			expect(stateEvents.length).toBe(0);
 		});
 
 		it('should abort processing for multiple intents when clear() is called', async () => {
@@ -175,7 +178,7 @@ describe('Clear Abort', () => {
 			unhook();
 
 			// Should not have processed intent-2 due to clear
-			const intent2Events = statusEvents.filter((e) => e.id === 'intent-2');
+			const intent2Events = stateEvents.filter((e) => e.id === 'intent-2');
 			expect(intent2Events.length).toBe(0);
 		});
 
@@ -210,8 +213,8 @@ describe('Clear Abort', () => {
 			await observer.process();
 
 			// Should have events only for Account B
-			expect(statusEvents.length).toBeGreaterThan(0);
-			for (const event of statusEvents) {
+			expect(stateEvents.length).toBeGreaterThan(0);
+			for (const event of stateEvents) {
 				expect(event.intent.transactions[0].from).toBe(accountB);
 			}
 		});
@@ -263,7 +266,7 @@ describe('Clear Abort', () => {
 			await processPromise;
 
 			// All emitted events should be for Account B (or no events at all is also acceptable)
-			for (const event of statusEvents) {
+			for (const event of stateEvents) {
 				if (event.id === sharedId) {
 					expect(event.intent.transactions[0].from).toBe(accountB);
 				}
@@ -316,8 +319,8 @@ describe('Clear Abort', () => {
 			await observer.process();
 
 			// Should have events for Account B
-			expect(statusEvents.length).toBeGreaterThan(0);
-			expect(statusEvents[0].intent.transactions[0].from).toBe(accountB);
+			expect(stateEvents.length).toBeGreaterThan(0);
+			expect(stateEvents[0].intent.transactions[0].from).toBe(accountB);
 		});
 	});
 });

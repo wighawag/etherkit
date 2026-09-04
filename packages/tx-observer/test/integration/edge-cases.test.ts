@@ -61,7 +61,7 @@ describe('Edge Cases for Full Coverage', () => {
 					{
 						hash: '0x1234567890123456789012345678901234567890123456789012345678901234',
 						from: '0x1234567890123456789012345678901234567890',
-						broadcastTimestamp: Date.now(),
+						broadcastTimestampMs: Date.now(),
 					},
 				],
 			};
@@ -94,7 +94,7 @@ describe('Edge Cases for Full Coverage', () => {
 
 			// Verify it's finalized via emissions
 			const latestEmission = getLatestEmissionForIntent(setup, intentId);
-			expect(latestEmission?.state?.final).toBeDefined();
+			expect(latestEmission?.state?.final).toBe(true);
 			expect(latestEmission?.state?.inclusion).toBe('Included');
 
 			const emissionCountBefore = setup.emissions.length;
@@ -142,7 +142,7 @@ describe('Edge Cases for Full Coverage', () => {
 						hash: txHash,
 						from: '0x1111111111111111111111111111111111111111',
 						nonce: 5,
-						broadcastTimestamp: Date.now(),
+						broadcastTimestampMs: Date.now(),
 					},
 				],
 			};
@@ -213,13 +213,13 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 
 			// Add listener
-			processor.on('intent:status', listener);
+			processor.on('intent:state', listener);
 
 			// Remove listener using offOperationStatus
-			processor.off('intent:status', listener);
+			processor.off('intent:state', listener);
 
 			// Listener should be removed
-			expect(() => processor.off('intent:status', listener)).not.toThrow();
+			expect(() => processor.off('intent:state', listener)).not.toThrow();
 		});
 
 		it('should not emit to removed intent listener', async () => {
@@ -254,8 +254,8 @@ describe('Edge Cases for Full Coverage', () => {
 			};
 
 			// Add and then remove listener
-			setup.processor.on('intent:status', listener);
-			setup.processor.off('intent:status', listener);
+			setup.processor.on('intent:state', listener);
+			setup.processor.off('intent:state', listener);
 
 			// Trigger emission
 			addToMempool();
@@ -275,7 +275,7 @@ describe('Edge Cases for Full Coverage', () => {
 					{
 						hash: '0x1234567890123456789012345678901234567890123456789012345678901234',
 						from: '0x1234567890123456789012345678901234567890',
-						broadcastTimestamp: Date.now(),
+						broadcastTimestampMs: Date.now(),
 					},
 				],
 			};
@@ -293,16 +293,16 @@ describe('Edge Cases for Full Coverage', () => {
 	});
 
 	describe('Intent Status Events vs Intent Events', () => {
-		it('should emit intent:status event when status changes', async () => {
+		it('should emit intent:state event when the state changes', async () => {
 			const {intent, addToMempool} = addSingleTxIntent(setup, {nonce: 5});
 
 			let statusEventCount = 0;
-			const statusListener = (_event: TransactionIntentEvent) => {
+			const stateListener = (_event: TransactionIntentEvent) => {
 				statusEventCount++;
 				return () => {};
 			};
 
-			setup.processor.on('intent:status', statusListener);
+			setup.processor.on('intent:state', stateListener);
 
 			// Process - should emit status event for initial state change
 			addToMempool();
@@ -342,7 +342,7 @@ describe('Edge Cases for Full Coverage', () => {
 					{
 						hash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 						from: '0x1234567890123456789012345678901234567890',
-						broadcastTimestamp: Date.now(),
+						broadcastTimestampMs: Date.now(),
 					},
 				],
 			};
@@ -379,12 +379,12 @@ describe('Edge Cases for Full Coverage', () => {
 					{
 						hash: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
 						from: '0x1234567890123456789012345678901234567890',
-						broadcastTimestamp: Date.now(),
+						broadcastTimestampMs: Date.now(),
 					},
 					{
 						hash: '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
 						from: '0x1234567890123456789012345678901234567890',
-						broadcastTimestamp: Date.now(),
+						broadcastTimestampMs: Date.now(),
 					},
 				],
 			};

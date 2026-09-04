@@ -307,8 +307,11 @@ describe('Consistency Guarantee with Local State Handler', () => {
 
 			const emittedIntent = getLatestEmission('merged-status');
 			expect(emittedIntent?.state?.inclusion).toBe('Included');
-			expect(emittedIntent?.state?.status).toBe('Success');
-			expect(emittedIntent?.state?.attemptIndex).toBe(0);
+			expect(emittedIntent?.state?.outcome).toBe('Success');
+			expect(emittedIntent?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 0,
+			});
 		});
 	});
 });

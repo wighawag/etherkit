@@ -1,6 +1,6 @@
 # @etherkit/tx-observer
 
-A TypeScript library for monitoring Ethereum transaction intents containing multiple transactions, with automatic status merging and finality tracking.
+A TypeScript library for monitoring Ethereum transaction intents containing multiple transactions, with automatic state merging and finality tracking.
 
 ## Overview
 
@@ -10,13 +10,68 @@ The Transaction Processor tracks **intents** - logical groupings of transactions
 - **Sequential retries**: Transactions with different nonces for the same logical action
 - **Multi-step intents**: Related transactions that form a single user action
 
-The processor monitors all transactions in an intent and computes a merged status, emitting events when the intent status changes.
+The processor monitors all transactions in an intent and computes a merged state, emitting events when the intent state changes.
 
 ## Installation
 
 ```bash
 npm install @etherkit/tx-observer
 ```
+
+## Upgrading from 0.1.x
+
+0.2.0 is a breaking release of the two persisted state shapes. If you store `TransactionIntent` (or the states inside it) and hand it back to `add()`, upgrade each stored record when you read it:
+
+| 0.1.x | 0.2.0 |
+|-------|-------|
+| `status: 'Success' \| 'Failure'` | `outcome: 'Success' \| 'Failure'` |
+| `final: number \| undefined` | `final: boolean`, plus `blockTimestamp?: number` on `Included` |
+| `attemptIndex: number` | `via: {kind: 'attempt', attemptIndex: number}` |
+| (absent) | `nonceObserved?: boolean`, treat a missing value as `false` |
+| event `'intent:status'` | event `'intent:state'` |
+| type `TransactionIntentStatus` | type `TransactionIntentState` |
+
+```typescript
+// read-time upgrade of one stored intent
+function upgrade(stored: any): TransactionIntent {
+  const upgradeState = (state: any) => {
+    if (!state) return undefined;
+    const outcome = state.outcome ?? state.status;
+    const final = typeof state.final === 'number' ? true : !!state.final;
+    if (state.inclusion === 'Included') {
+      return {
+        inclusion: 'Included',
+        outcome,
+        final,
+        // the old `final` value was the inclusion block's timestamp
+        blockTimestamp:
+          state.blockTimestamp ??
+          (typeof state.final === 'number' ? state.final : undefined),
+        via: state.via ?? {kind: 'attempt', attemptIndex: state.attemptIndex ?? 0},
+      };
+    }
+    if (state.inclusion === 'Dropped') {
+      return {inclusion: 'Dropped', final};
+    }
+    return {inclusion: state.inclusion};
+  };
+
+  return {
+    ...stored,
+    state: upgradeState(stored.state),
+    transactions: stored.transactions.map((tx: any) => ({
+      ...tx,
+      // an old record never proved its nonce came from the chain
+      nonceObserved: tx.nonceObserved === true,
+      state: upgradeState(tx.state),
+    })),
+  };
+}
+```
+
+Note that on a `Dropped` record the old `final` value was **not** a block timestamp (it was the broadcast time, or the finalized block's time), so it is dropped rather than migrated into `blockTimestamp`. `upgradeState` is written for the intent state; a transaction state has no `via`, so drop that key when you reuse it for `transactions[].state`.
+
+Setting `nonceObserved` to `false` means a transaction whose nonce the observer never read back reverts to `NotFound` until it is seen on chain again, which is the honest state. If its supplied nonce is already spent in finalized history, the observer says so once and then stops polling it.
 
 ## Quick Start
 
@@ -37,8 +92,9 @@ const intent: TransactionIntent = {
     {
       hash: '0xabc...',
       from: '0x123...',
-      nonce: 5,
-      broadcastTimestamp: Date.now(),
+      chainId: 1,
+      nonce: 5, // the nonce you INTENDED, see `nonceObserved` below
+      broadcastTimestampMs: Date.now(),
     },
   ],
 };
@@ -46,16 +102,23 @@ const intent: TransactionIntent = {
 // Add the intent to tracking (ID is passed separately)
 processor.add('my-intent-1', intent);
 
-// Listen for intent status changes (for UI updates)
-processor.on('intent:status', (event: TransactionIntentEvent) => {
+// Listen for intent state changes (for UI updates)
+processor.on('intent:state', (event: TransactionIntentEvent) => {
   console.log(`Intent ${event.id}: ${event.intent.state?.inclusion}`);
-  
+
   if (event.intent.state?.inclusion === 'Included') {
-    const winningTx = event.intent.transactions[event.intent.state.attemptIndex];
-    console.log(`Status: ${event.intent.state.status}`);
-    console.log(`Winning TX: ${winningTx.hash}`);
+    console.log(`Outcome: ${event.intent.state.outcome}`); // 'Success' | 'Failure'
+    console.log(`Final: ${event.intent.state.final}`); // boolean
+    console.log(`Mined at: ${event.intent.state.blockTimestamp}`); // chain seconds
+
+    // What proved the inclusion:
+    if (event.intent.state.via.kind === 'attempt') {
+      const winningTx =
+        event.intent.transactions[event.intent.state.via.attemptIndex];
+      console.log(`Winning TX: ${winningTx.hash}`);
+    }
   }
-  
+
   return () => {}; // cleanup function
 });
 
@@ -71,7 +134,7 @@ processor.on('intents:added', (intents) => {
   return () => {}; // cleanup function
 });
 
-// Process periodically (check for status updates)
+// Process periodically (check for state updates)
 setInterval(() => processor.process(), 5000);
 ```
 
@@ -155,7 +218,9 @@ function onAccountSwitch(newAccount: string, newIntents: Record<string, Transact
 
 #### `process(): Promise<void>`
 
-Check and update the status of all tracked intents. This queries the Ethereum provider for transaction receipts and updates statuses accordingly.
+Check and update the state of all tracked intents. This queries the Ethereum provider for transaction receipts and updates the intents accordingly.
+
+A tick costs nothing when there is nothing to ask about: an intent whose transactions are all final, an intent from another chain, and a transaction the observer has given up on (see `nonceObserved`) are all skipped, and if that leaves no work, `process()` returns without a single request.
 
 ```typescript
 await processor.process();
@@ -163,11 +228,18 @@ await processor.process();
 
 #### `setProvider(provider: EIP1193Provider)`
 
-Update the Ethereum provider.
+Update the Ethereum provider. This also re-reads `eth_chainId` and drops everything that was derived from the previous chain (the cached chain id, the last known block number, and any "nothing left to learn" verdicts).
+
+**Call this when the wallet switches network.** The chain id is read once per provider, so an injected wallet that emits `chainChanged` without the app replacing the provider object would leave the observer comparing against the old chain:
 
 ```typescript
 processor.setProvider(newProvider);
+
+// injected wallet that switches network under you
+window.ethereum.on('chainChanged', () => processor.setProvider(window.ethereum));
 ```
+
+If the provider cannot answer `eth_chainId` at all, the chain check simply stays off (the observer does not ask again until `setProvider`), and intents are processed as if they carried no `chainId`.
 
 #### `on(event, listener): () => void`
 
@@ -177,8 +249,10 @@ Subscribe to events. Returns a cleanup function to unsubscribe.
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `'intent:updated'` | `TransactionIntentEvent` | Fires when any transaction in the intent changes (for persistence) |
-| `'intent:status'` | `TransactionIntentEvent` | Fires only when intent status changes (for UI updates) |
+| `'intent:updated'` | `TransactionIntentEvent` | Fires when anything in the intent changes (for persistence) |
+| `'intent:state'` | `TransactionIntentEvent` | Fires only when the intent state changes (for UI updates) |
+
+`'intent:state'` is always accompanied by `'intent:updated'`: persisting on the latter can never leave you with a stored state the UI was never told about.
 | `'intents:added'` | `TransactionIntentsAddedEvent` | Fires when intents are added via `add()` or `addMultiple()` |
 | `'intents:removed'` | `TransactionIntentsRemovedEvent` | Fires when intents are removed via `remove()` |
 | `'intents:cleared'` | `void` | Fires when all intents are cleared via `clear()` |
@@ -200,13 +274,13 @@ Unsubscribe from events.
 
 ```typescript
 const listener = (event: TransactionIntentEvent) => {
-  console.log(`Intent ${event.id} status:`, event.intent.state?.inclusion);
+  console.log(`Intent ${event.id} state:`, event.intent.state?.inclusion);
   return () => {};
 };
 
-processor.on('intent:status', listener);
+processor.on('intent:state', listener);
 // Later...
-processor.off('intent:status', listener);
+processor.off('intent:state', listener);
 ```
 
 ## Types
@@ -217,32 +291,55 @@ Represents a single broadcasted transaction.
 
 ```typescript
 type BroadcastedTransaction = {
+  chainId?: number;
   readonly hash: `0x${string}`;
   readonly from: `0x${string}`;
   nonce?: number;
-  readonly broadcastTimestamp: number;
+  nonceObserved?: boolean;
+  readonly broadcastTimestampMs: number;
   state?: BroadcastedTransactionState;
 };
 
 type BroadcastedTransactionState =
-  | { inclusion: 'InMemPool' | 'NotFound'; final: undefined; status: undefined }
-  | { inclusion: 'Dropped'; final?: number; status: undefined }
-  | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number };
+  | { inclusion: 'InMemPool' | 'NotFound' }
+  | { inclusion: 'Dropped'; final: boolean }
+  | { inclusion: 'Included'; outcome: 'Failure' | 'Success'; final: boolean; blockTimestamp?: number };
 ```
 
-### `TransactionIntentStatus`
+- `chainId`: when set and it does not match the provider's chain, the whole intent is skipped (and warned about once) instead of being resolved against the wrong chain.
+- `nonce`: a value you supply is the **intended** nonce. A wallet may sign a different one, so it is not trusted for drop detection.
+- `nonceObserved`: set by the observer once it read the nonce back from `eth_getTransactionByHash`. Only an observed nonce can make a transaction `Dropped`; without it the transaction stays `NotFound`. When such a transaction was never seen on chain and the supplied nonce is spent in finalized history, the observer stops polling it: the state stays `NotFound`, which is all it can honestly say, and it costs nothing from then on.
+- `final`: a boolean, "past the finality depth".
+- `blockTimestamp`: the inclusion block's timestamp, in the chain's own **seconds**, set as soon as the transaction is included (not only once final), so you can show "mined at" straight away. The milliseconds sibling is `broadcastTimestampMs`; nothing converts between the two.
 
-The merged status of all transactions in an intent.
+### `TransactionIntentState`
+
+The merged state of all transactions in an intent.
 
 ```typescript
-type TransactionIntentStatus =
-  | { inclusion: 'InMemPool' | 'NotFound'; final: undefined; status: undefined; attemptIndex: undefined }
-  | { inclusion: 'Dropped'; final?: number; status: undefined; attemptIndex: undefined }
-  | { inclusion: 'Included'; status: 'Failure' | 'Success'; final?: number; attemptIndex: number };
+type TransactionIntentState =
+  | { inclusion: 'InMemPool' | 'NotFound' }
+  | { inclusion: 'Dropped'; final: boolean }
+  | {
+      inclusion: 'Included';
+      outcome: 'Failure' | 'Success';
+      final: boolean;
+      blockTimestamp?: number;
+      via: {kind: 'attempt'; attemptIndex: number};
+    }
+  | {
+      inclusion: 'Included';
+      outcome: 'Success'; // an observed effect cannot prove a failure
+      final: boolean;
+      blockTimestamp?: number;
+      via: {kind: 'expectedUpdate'; blockNumber: number};
+    };
 ```
 
-- `attemptIndex`: Index into `transactions[]` for the "winning" transaction (first success, or first failure if all failed)
-- Get the winning tx hash via: `intent.transactions[intent.state.attemptIndex].hash`
+- `via` says what proved the inclusion. Switch on `via.kind`:
+  - `'attempt'`: one of the intent's own transactions, at `via.attemptIndex` into `transactions[]`. The winning tx is `intent.transactions[via.attemptIndex]` (first success, or first failure if all failed).
+  - `'expectedUpdate'`: an effect observed on chain that none of the intent's transactions produced, for instance a resubmission the user made in their wallet. There is no attempt to point at, which is why this is a union rather than an optional index. `blockNumber` is the block the effect was seen in: an attempt win recomputes `final` from its receipt every tick, but nothing can recompute it for an effect that was only sampled, so `final` comes from `latestBlockNumber - blockNumber >= finality`. It is recorded when the win is made, never passed to `add()`. (Detection is not implemented yet; the arm exists because the shape is persisted.)
+- New `via` arms are additive: consumers switch on `kind`.
 
 ### `TransactionIntent`
 
@@ -251,9 +348,32 @@ An intent containing multiple transactions.
 ```typescript
 type TransactionIntent = {
   transactions: BroadcastedTransaction[];
-  state?: TransactionIntentStatus;
+  state?: TransactionIntentState;
+  expectedUpdate?: ExpectedUpdate;
 };
 ```
+
+### `ExpectedUpdate`
+
+An effect on chain that satisfies the intent, whether or not one of the intent's own transactions produced it. **Detection is not implemented yet**; the shape is declared because consumers persist it.
+
+```typescript
+type ExpectedUpdate = {
+  /** Lower bound for the log query. Filled by add() when absent. */
+  fromBlock?: number;
+  /** When the watch closes. The event can never arrive after it. */
+  until?: {kind: 'block'; blockNumber: number} | {kind: 'chainTime'; timestampSeconds: number};
+} & (
+  | { address: `0x${string}`; event: {topics: `0x${string}`[]} }
+  | { address: `0x${string}`; call: {data: `0x${string}`; result: `0x${string}`} }
+);
+```
+
+- `fromBlock` is filled from the latest block the observer already polls, so creating an intent costs no extra RPC: by `add()` when a block is already known, otherwise by the first `process()` tick. The filled value is emitted on `intent:updated`. **Persist it**: refilling it on every reload would push the window past an event that landed while the app was closed.
+- A watch can be attached to an intent that already exists (`add()` with the same id): an intent that has no watch adopts the incoming one. An existing watch is never replaced, since that would move its `fromBlock` forward.
+- A stored `via: {kind: 'expectedUpdate'}` inclusion is never revisited: the observer cannot re-check an effect it did not see, so it keeps that state unless one of the intent's own attempts succeeds.
+- `until` bounds the **watch**, not the query. The query is always `fromBlock..latest`; the watch simply stops once the latest block is past the bound. Both variants compare exactly against the latest block the observer already fetches (its number, or its timestamp), so nothing estimates block times.
+- The `call` predicate must **latch**: once it holds it must never stop holding, because the observer only samples it and inclusion is never revisited.
 
 ### `TransactionIntentEvent`
 
@@ -284,29 +404,32 @@ Event payload emitted when intents are removed.
 type TransactionIntentsRemovedEvent = string[];
 ```
 
-## Status States
+## Inclusion States
 
 | Inclusion | Description |
 |-----------|-------------|
 | `InMemPool` | At least one transaction is visible in the mempool |
-| `NotFound` | No transactions visible in mempool (may be temporary) |
-| `Dropped` | All transactions dropped (nonce was used by external tx) |
+| `NotFound` | No transactions visible in mempool (may be temporary), or the intent has no transaction yet |
+| `Dropped` | All transactions dropped: an **observed** nonce was used by another tx |
 | `Included` | At least one transaction was included in a block |
 
-## Status Merging Logic
+## State Merging Logic
 
-When an intent contains multiple transactions, their statuses are merged using the following priority (highest wins):
+When an intent contains multiple transactions, their states are merged using the following priority (highest wins):
 
 1. **Included** - Any tx included in a block → intent is `Included`
 2. **InMemPool** - Any tx in mempool → intent is `InMemPool`
 3. **NotFound** - None visible → intent is `NotFound`
 4. **Dropped** - ALL txs dropped → intent is `Dropped`
 
+An intent with **no transaction** is `NotFound`, not `Dropped`: nothing about it failed, it just has not been broadcast yet.
+
 ### For `Included` Intents
 
-- If **any** transaction succeeded → `status: 'Success'`
-- If **all** included transactions failed → `status: 'Failure'`
-- `attemptIndex` points to the first successful tx, or first failure if all failed
+- If **any** transaction succeeded → `outcome: 'Success'`
+- If **all** included transactions failed → `outcome: 'Failure'`
+- `via.attemptIndex` points to the first successful tx, or first failure if all failed
+- `final` and `blockTimestamp` come from that winning attempt
 
 This allows scenarios like:
 - Tx A (nonce 5) succeeds, Tx B (nonce 6) fails due to nonce conflict → Intent is **Success**
@@ -324,11 +447,9 @@ const tx1: BroadcastedTransaction = {
   hash: '0x111...',
   from: '0xabc...',
   nonce: 5,
-  broadcastTimestamp: Date.now(),
+  broadcastTimestampMs: Date.now(),
   state: {
     inclusion: 'InMemPool',
-    status: undefined,
-    final: undefined,
   },
 };
 
@@ -336,9 +457,6 @@ processor.add('transfer-1', {
   transactions: [tx1],
   state: {
     inclusion: 'InMemPool',
-    status: undefined,
-    final: undefined,
-    attemptIndex: undefined,
   },
 });
 
@@ -363,8 +481,8 @@ If a transaction is stuck, retry with a new nonce:
 ```typescript
 processor.add('my-action', {
   transactions: [
-    { hash: '0x1...', from: '0xabc...', nonce: 5, broadcastTimestamp: Date.now() }, // Original
-    { hash: '0x2...', from: '0xabc...', nonce: 6, broadcastTimestamp: Date.now() }, // Retry with new nonce
+    { hash: '0x1...', from: '0xabc...', nonce: 5, broadcastTimestampMs: Date.now() }, // Original
+    { hash: '0x2...', from: '0xabc...', nonce: 6, broadcastTimestampMs: Date.now() }, // Retry with new nonce
   ],
 });
 

@@ -1,7 +1,7 @@
 /**
  * Tests for the dual-event system:
  * - 'intent' event: fires when any TX in the intent changes (for persistence)
- * - 'intent:status' event: fires only when intent status changes (for UI/state)
+ * - 'intent:state' event: fires only when intent state changes (for UI/state)
  */
 
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
@@ -27,9 +27,9 @@ describe('Event Types', () => {
 	let controller: MockProviderController;
 	let intentEmissions: TransactionIntent[];
 	let intentEvents: TransactionIntentEvent[];
-	let statusEmissions: TransactionIntent[];
+	let stateEmissions: TransactionIntent[];
 	let cleanupIntent: () => void;
-	let cleanupStatus: () => void;
+	let cleanupState: () => void;
 
 	beforeEach(() => {
 		resetHashCounter();
@@ -45,7 +45,7 @@ describe('Event Types', () => {
 
 		intentEmissions = [];
 		intentEvents = [];
-		statusEmissions = [];
+		stateEmissions = [];
 
 		// Listen to both event types
 		cleanupIntent = processor.on('intent:updated', (event) => {
@@ -54,15 +54,15 @@ describe('Event Types', () => {
 			return () => {};
 		});
 
-		cleanupStatus = processor.on('intent:status', (event) => {
-			statusEmissions.push(structuredClone(event.intent));
+		cleanupState = processor.on('intent:state', (event) => {
+			stateEmissions.push(structuredClone(event.intent));
 			return () => {};
 		});
 	});
 
 	afterEach(() => {
 		cleanupIntent();
-		cleanupStatus();
+		cleanupState();
 	});
 
 	// Helper to get latest emission for an intent ID
@@ -75,8 +75,8 @@ describe('Event Types', () => {
 		return undefined;
 	}
 
-	describe('intent vs intent:status events', () => {
-		it('should emit both events when intent status changes', async () => {
+	describe('intent vs intent:state events', () => {
+		it('should emit both events when intent state changes', async () => {
 			const tx1 = createBroadcastedTx({nonce: 5});
 			const mockTx1 = createMockTx({
 				hash: tx1.hash,
@@ -88,18 +88,18 @@ describe('Event Types', () => {
 			controller.addToMempool(mockTx1);
 			processor.addMultiple({'dual-emit': intent});
 
-			// First process: BeingFetched -> Broadcasted (status change)
+			// First process: BeingFetched -> Broadcasted (state change)
 			await processor.process();
 
-			// Both events should fire for initial status change
+			// Both events should fire for initial state change
 			expect(intentEmissions.length).toBe(1);
-			expect(statusEmissions.length).toBe(1);
+			expect(stateEmissions.length).toBe(1);
 
 			expect(intentEmissions[0].state?.inclusion).toBe('InMemPool');
-			expect(statusEmissions[0].state?.inclusion).toBe('InMemPool');
+			expect(stateEmissions[0].state?.inclusion).toBe('InMemPool');
 		});
 
-		it('should emit intent but NOT intent:status when only TX changes without status change', async () => {
+		it('should emit intent but NOT intent:state when only TX changes without a state change', async () => {
 			/**
 			 * Scenario:
 			 * - Intent has TX1 (Broadcasted) and TX2 (Broadcasted)
@@ -107,13 +107,13 @@ describe('Event Types', () => {
 			 * - TX2 also becomes Included (Success)
 			 *
 			 * After TX1 inclusion:
-			 * - Intent status: Included (changed)
+			 * - Intent state: Included (changed)
 			 * - Both events fire
 			 *
 			 * After TX2 inclusion:
-			 * - Intent status: still Included (no change)
+			 * - Intent state: still Included (no change)
 			 * - Only 'intent' event fires (TX2 changed)
-			 * - 'intent:status' does NOT fire (status unchanged)
+			 * - 'intent:state' does NOT fire (state unchanged)
 			 */
 
 			const tx1 = createBroadcastedTx({nonce: 5});
@@ -143,7 +143,7 @@ describe('Event Types', () => {
 			expect(emittedIntent?.state?.inclusion).toBe('InMemPool');
 
 			const intentCountAfterBroadcast = intentEmissions.length;
-			const statusCountAfterBroadcast = statusEmissions.length;
+			const stateCountAfterBroadcast = stateEmissions.length;
 
 			// Include TX1 - intent becomes Included
 			controller.includeTx(tx1.hash, 'success');
@@ -152,20 +152,23 @@ describe('Event Types', () => {
 
 			const afterInclude = getLatestEmission('multi-tx-event');
 			expect(afterInclude?.state?.inclusion).toBe('Included');
-			expect(afterInclude?.state?.attemptIndex).toBe(0); // TX1
+			expect(afterInclude?.state?.via).toEqual({
+				kind: 'attempt',
+				attemptIndex: 0,
+			}); // TX1
 
 			const intentCountAfterTx1Include = intentEmissions.length;
-			const statusCountAfterTx1Include = statusEmissions.length;
+			const stateCountAfterTx1Include = stateEmissions.length;
 
-			// Both events should have fired (status changed to Included)
+			// Both events should have fired (state changed to Included)
 			expect(intentCountAfterTx1Include).toBeGreaterThan(
 				intentCountAfterBroadcast,
 			);
-			expect(statusCountAfterTx1Include).toBeGreaterThan(
-				statusCountAfterBroadcast,
+			expect(stateCountAfterTx1Include).toBeGreaterThan(
+				stateCountAfterBroadcast,
 			);
 
-			// Now include TX2 - intent is STILL Included (no status change)
+			// Now include TX2 - intent is STILL Included (no state change)
 			controller.includeTx(tx2.hash, 'success');
 			controller.setAccountNonce(TEST_ACCOUNT, 7);
 			await processor.process();
@@ -181,9 +184,9 @@ describe('Event Types', () => {
 				intentCountAfterTx1Include,
 			);
 
-			// 'intent:status' should NOT fire (status still Included)
+			// 'intent:state' should NOT fire (state still Included)
 			// Note: attemptIndex won't change because TX1 was first success
-			expect(statusEmissions.length).toBe(statusCountAfterTx1Include);
+			expect(stateEmissions.length).toBe(stateCountAfterTx1Include);
 		});
 
 		it('should not emit either event when nothing changes', async () => {
@@ -203,21 +206,21 @@ describe('Event Types', () => {
 			expect(emittedIntent?.state?.inclusion).toBe('InMemPool');
 
 			const intentCountBefore = intentEmissions.length;
-			const statusCountBefore = statusEmissions.length;
+			const stateCountBefore = stateEmissions.length;
 
 			// Process again with no changes
 			await processor.process();
 
 			// No new events
 			expect(intentEmissions.length).toBe(intentCountBefore);
-			expect(statusEmissions.length).toBe(statusCountBefore);
+			expect(stateEmissions.length).toBe(stateCountBefore);
 		});
 
 		it('should emit intent event when TX finality changes', async () => {
 			/**
 			 * When a TX becomes final:
 			 * - 'intent' fires (TX changed)
-			 * - 'intent:status' may or may not fire depending on if final affects status
+			 * - 'intent:state' may or may not fire depending on if final affects the state
 			 */
 
 			const tx1 = createBroadcastedTx({nonce: 5});
@@ -239,10 +242,10 @@ describe('Event Types', () => {
 
 			const includedIntent = getLatestEmission('finality-test');
 			expect(includedIntent?.state?.inclusion).toBe('Included');
-			expect(includedIntent?.transactions[0].state?.final).toBeUndefined(); // Not final yet
+			expect(includedIntent?.transactions[0].state?.final).toBe(false); // Not final yet
 
 			const intentCountBefore = intentEmissions.length;
-			const statusCountBefore = statusEmissions.length;
+			const stateCountBefore = stateEmissions.length;
 
 			// Advance blocks past finality threshold (12 blocks)
 			controller.advanceBlocks(15);
@@ -251,18 +254,18 @@ describe('Event Types', () => {
 
 			// TX should now be final
 			const finalizedIntent = getLatestEmission('finality-test');
-			expect(finalizedIntent?.transactions[0].state?.final).toBeDefined();
+			expect(finalizedIntent?.transactions[0].state?.final).toBe(true);
 
 			// 'intent' event should fire (TX finality changed)
 			expect(intentEmissions.length).toBeGreaterThan(intentCountBefore);
 
-			// 'intent:status' should also fire (final field changed)
-			expect(statusEmissions.length).toBeGreaterThan(statusCountBefore);
+			// 'intent:state' should also fire (final field changed)
+			expect(stateEmissions.length).toBeGreaterThan(stateCountBefore);
 		});
 	});
 
 	describe('offOperationStatus', () => {
-		it('should stop receiving intent:status events after unsubscribe', async () => {
+		it('should stop receiving intent:state events after unsubscribe', async () => {
 			const tx1 = createBroadcastedTx({nonce: 5});
 			const mockTx1 = createMockTx({
 				hash: tx1.hash,
@@ -276,18 +279,18 @@ describe('Event Types', () => {
 
 			// First process triggers events
 			await processor.process();
-			expect(statusEmissions.length).toBe(1);
+			expect(stateEmissions.length).toBe(1);
 
-			// Unsubscribe from status events
-			cleanupStatus();
+			// Unsubscribe from state events
+			cleanupState();
 
-			// Include TX1 - triggers status change
+			// Include TX1 - triggers a state change
 			controller.includeTx(tx1.hash, 'success');
 			controller.setAccountNonce(TEST_ACCOUNT, 6);
 			await processor.process();
 
 			// Status emissions should NOT increase (unsubscribed)
-			expect(statusEmissions.length).toBe(1);
+			expect(stateEmissions.length).toBe(1);
 
 			// But intent emissions should still work
 			expect(intentEmissions.length).toBeGreaterThan(1);

@@ -75,6 +75,8 @@ export interface MockProviderController {
 
 	// Transaction state
 	includeTx(txHash: string, status: 'success' | 'failure'): void;
+	/** Include several transactions in ONE new block (same block timestamp). */
+	includeTxs(txHashes: string[], status: 'success' | 'failure'): void;
 	dropTx(txHash: string): void;
 
 	// Nonce manipulation
@@ -359,50 +361,55 @@ export function createMockProvider(config: MockProviderConfig = {}): {
 		},
 
 		includeTx(txHash: string, status: 'success' | 'failure'): void {
-			// Get tx from mempool or create it
-			let tx = mempool.get(txHash);
-			if (!tx) {
-				// Try to get from included txs
-				tx = includedTxs.get(txHash);
-			}
+			this.includeTxs([txHash], status);
+		},
 
-			if (!tx) {
-				throw new Error(`Transaction ${txHash} not found in mempool or state`);
-			}
+		includeTxs(txHashes: string[], status: 'success' | 'failure'): void {
+			const txs = txHashes.map((txHash) => {
+				// Get tx from mempool or from the already included ones
+				const tx = mempool.get(txHash) || includedTxs.get(txHash);
+				if (!tx) {
+					throw new Error(
+						`Transaction ${txHash} not found in mempool or state`,
+					);
+				}
+				return tx;
+			});
 
-			// Remove from mempool
-			mempool.delete(txHash);
-
-			// Add to next block (advance if needed)
+			// One new block for all of them
 			this.advanceBlock();
 			const block = blocks.get(currentBlockNumber)!;
-			block.transactions.push(tx.hash);
 
-			// Update tx with block info
-			const includedTx: MockTransaction = {
-				...tx,
-				blockHash: block.hash,
-				blockNumber: block.number,
-			};
-			includedTxs.set(txHash, includedTx);
+			for (const tx of txs) {
+				mempool.delete(tx.hash);
+				block.transactions.push(tx.hash);
 
-			// Create receipt
-			const receipt: MockReceipt = {
-				transactionHash: tx.hash,
-				blockHash: block.hash,
-				blockNumber: block.number,
-				status: status === 'success' ? '0x1' : '0x0',
-				gasUsed: '0x5208',
-				cumulativeGasUsed: '0x5208',
-				transactionIndex: `0x${(block.transactions.length - 1).toString(16)}`,
-				from: tx.from,
-				to: tx.to,
-				logs: [],
-			};
-			receipts.set(txHash, receipt);
+				// Update tx with block info
+				const includedTx: MockTransaction = {
+					...tx,
+					blockHash: block.hash,
+					blockNumber: block.number,
+				};
+				includedTxs.set(tx.hash, includedTx);
 
-			// Increment account nonce
-			this.incrementAccountNonce(tx.from);
+				// Create receipt
+				const receipt: MockReceipt = {
+					transactionHash: tx.hash,
+					blockHash: block.hash,
+					blockNumber: block.number,
+					status: status === 'success' ? '0x1' : '0x0',
+					gasUsed: '0x5208',
+					cumulativeGasUsed: '0x5208',
+					transactionIndex: `0x${(block.transactions.length - 1).toString(16)}`,
+					from: tx.from,
+					to: tx.to,
+					logs: [],
+				};
+				receipts.set(tx.hash, receipt);
+
+				// Increment account nonce
+				this.incrementAccountNonce(tx.from);
+			}
 		},
 
 		dropTx(txHash: string): void {

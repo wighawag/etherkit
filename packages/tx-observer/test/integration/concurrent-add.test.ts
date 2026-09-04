@@ -375,7 +375,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				'state-handler-intent': {...savedIntent, transactions: [tx2]},
 			});
 
-			// Include TX2 to trigger a status change
+			// Include TX2 to trigger a state change
 			setup.controller.includeTx(tx2.hash, 'success');
 
 			await setup.processor.process();
@@ -420,7 +420,7 @@ describe('Concurrent Add Tests - Consistency with Local State Handler', () => {
 				'no-data-loss': {...intent, transactions: [tx2]},
 			});
 
-			// Include TX1 to trigger a status change, which will emit both txs
+			// Include TX1 to trigger a state change, which will emit both txs
 			setup.controller.includeTx(tx1.hash, 'success');
 
 			await setup.processor.process();

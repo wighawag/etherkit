@@ -17,16 +17,18 @@ export function assertIntentInclusion(
 }
 
 /**
- * Assert that an intent is in the Included state with expected status
+ * Assert that an intent is in the Included state with the expected outcome,
+ * proved by one of its own attempts.
  */
 export function assertIntentIncluded(
 	intent: TransactionIntent,
-	expectedStatus: 'Success' | 'Failure',
+	expectedOutcome: 'Success' | 'Failure',
 	message?: string,
 ): void {
 	expect(intent.state?.inclusion, message).toBe('Included');
-	expect(intent.state?.status, message).toBe(expectedStatus);
-	expect(typeof intent.state?.attemptIndex, message).toBe('number');
+	expect(intent.state?.outcome, message).toBe(expectedOutcome);
+	expect(intent.state?.via?.kind, message).toBe('attempt');
+	expect(typeof intent.state?.via?.attemptIndex, message).toBe('number');
 }
 
 /**
@@ -36,8 +38,7 @@ export function assertIntentFinalized(
 	intent: TransactionIntent,
 	message?: string,
 ): void {
-	expect(intent.state?.final, message).toBeDefined();
-	expect(typeof intent.state?.final, message).toBe('number');
+	expect(intent.state?.final, message).toBe(true);
 }
 
 /**
@@ -88,18 +89,17 @@ export function assertIntentTxCount(
 }
 
 /**
- * Assert that the winning tx (attemptIndex) points to a specific hash
+ * Assert that the winning attempt (via.attemptIndex) points to a specific hash
  */
 export function assertWinningTx(
 	intent: TransactionIntent,
 	expectedHash: `0x${string}`,
 	message?: string,
 ): void {
-	expect(
-		intent.state?.attemptIndex,
-		'attemptIndex should be defined',
-	).toBeDefined();
-	const winningTx = intent.transactions[intent.state?.attemptIndex!];
+	const via = intent.state?.via;
+	expect(via?.kind, 'intent should be proved by an attempt').toBe('attempt');
+	const attemptIndex = via?.kind === 'attempt' ? via.attemptIndex : -1;
+	const winningTx = intent.transactions[attemptIndex];
 	expect(
 		winningTx.hash,
 		message || `Winning tx should be ${expectedHash}`,
@@ -193,22 +193,22 @@ export function assertLatestEmissionContainsTx(
 }
 
 /**
- * Assert intent status matches expected values
+ * Assert intent state matches expected values
  */
-export function assertIntentStatus(
+export function assertIntentState(
 	intent: TransactionIntent,
 	expected: {
 		inclusion: BroadcastedTransactionInclusion;
-		status?: 'Success' | 'Failure';
-		final?: number | undefined;
+		outcome?: 'Success' | 'Failure';
+		final?: boolean;
 		attemptIndex?: number;
 	},
 	message?: string,
 ): void {
 	expect(intent.state?.inclusion, message).toBe(expected.inclusion);
 
-	if (expected.status !== undefined) {
-		expect(intent.state?.status, message).toBe(expected.status);
+	if (expected.outcome !== undefined) {
+		expect(intent.state?.outcome, message).toBe(expected.outcome);
 	}
 
 	if (expected.final !== undefined) {
@@ -221,6 +221,11 @@ export function assertIntentStatus(
 	}
 
 	if (expected.attemptIndex !== undefined) {
-		expect(intent.state?.attemptIndex, message).toBe(expected.attemptIndex);
+		const via = intent.state?.via;
+		expect(via?.kind, message).toBe('attempt');
+		expect(
+			via?.kind === 'attempt' ? via.attemptIndex : undefined,
+			message,
+		).toBe(expected.attemptIndex);
 	}
 }

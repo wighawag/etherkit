@@ -37,7 +37,9 @@ export function createBroadcastedTx(
 	return {
 		hash,
 		from,
+		chainId: overrides.chainId,
 		nonce: overrides.nonce,
+		nonceObserved: overrides.nonceObserved,
 		broadcastTimestampMs: overrides.broadcastTimestampMs || Date.now(),
 		state: overrides.state,
 	} as BroadcastedTransaction;

@@ -84,7 +84,7 @@ describe('Single Transaction Lifecycle', () => {
 
 			// Not finalized yet
 			const includedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(includedIntent?.state?.final).toBeUndefined();
+			expect(includedIntent?.state?.final).toBe(false);
 
 			// Advance blocks to finality
 			setup.controller.advanceBlocks(12);
@@ -119,7 +119,7 @@ describe('Single Transaction Lifecycle', () => {
 			expect(phases.added?.state?.inclusion).toBe('NotFound'); // Not in mempool yet
 			expect(phases.broadcasted?.state?.inclusion).toBe('InMemPool');
 			expect(phases.included?.state?.inclusion).toBe('Included');
-			expect(phases.finalized?.state?.final).toBeDefined();
+			expect(phases.finalized?.state?.final).toBe(true);
 		});
 	});
 
@@ -150,7 +150,7 @@ describe('Single Transaction Lifecycle', () => {
 			setup.controller.advanceBlocks(12);
 			await processAndWait(setup);
 			const finalizedEmission = setup.emissions[setup.emissions.length - 1];
-			expect(finalizedEmission.state?.final).toBeDefined();
+			expect(finalizedEmission.state?.final).toBe(true);
 		});
 
 		it('should not emit duplicate events for unchanged status', async () => {
@@ -273,7 +273,7 @@ describe('Single Transaction Lifecycle', () => {
 
 			// Should still not be finalized
 			const emittedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(emittedIntent?.state?.final).toBeUndefined();
+			expect(emittedIntent?.state?.final).toBe(false);
 		});
 
 		it('should finalize tx exactly at finality threshold', async () => {

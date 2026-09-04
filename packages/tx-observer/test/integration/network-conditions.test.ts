@@ -202,7 +202,7 @@ describe('Network Conditions', () => {
 
 			// Not finalized yet
 			const includedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(includedIntent?.state?.final).toBeUndefined();
+			expect(includedIntent?.state?.final).toBe(false);
 
 			// Advance blocks
 			setup.controller.advanceBlocks(12);
@@ -210,7 +210,7 @@ describe('Network Conditions', () => {
 
 			// Should be finalized
 			const finalizedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(finalizedIntent?.state?.final).toBeDefined();
+			expect(finalizedIntent?.state?.final).toBe(true);
 
 			// Block number should have advanced
 			expect(setup.controller.getBlockNumber()).toBe(initialBlockNumber + 12);
@@ -234,7 +234,7 @@ describe('Network Conditions', () => {
 			setup.controller.advanceBlocks(11);
 			await processAndWait(setup);
 			const almostFinalIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(almostFinalIntent?.state?.final).toBeUndefined();
+			expect(almostFinalIntent?.state?.final).toBe(false);
 
 			// Advance exactly one more block to reach finality
 			setup.controller.advanceBlock();
@@ -242,7 +242,7 @@ describe('Network Conditions', () => {
 
 			// Should now be finalized
 			const finalizedIntent = getLatestEmissionForIntent(setup, intentId);
-			expect(finalizedIntent?.state?.final).toBeDefined();
+			expect(finalizedIntent?.state?.final).toBe(true);
 		});
 	});
 
