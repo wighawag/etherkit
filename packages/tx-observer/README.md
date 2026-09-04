@@ -373,6 +373,7 @@ type ExpectedUpdate = {
 - A watch can be attached to an intent that already exists (`add()` with the same id): an intent that has no watch adopts the incoming one. An existing watch is never replaced, since that would move its `fromBlock` forward.
 - A stored `via: {kind: 'expectedUpdate'}` inclusion is never revisited: the observer cannot re-check an effect it did not see, so it keeps that state unless one of the intent's own attempts succeeds.
 - `until` bounds the **watch**, not the query. The query is always `fromBlock..latest`; the watch simply stops once the latest block is past the bound. Both variants compare exactly against the latest block the observer already fetches (its number, or its timestamp), so nothing estimates block times.
+- Set `until` if you want the watch to hold finality open. While an open watch is still running, an intent whose transactions are all dropped must not be reported as final, because the effect can still arrive from elsewhere (a resubmission the user made in their wallet, say). That is only decidable with a bound: an unbounded watch can never conclude the effect will not arrive, so without `until` the drop finalises as usual and the watch is best-effort, running for as long as you keep the intent.
 - The `call` predicate must **latch**: once it holds it must never stop holding, because the observer only samples it and inclusion is never revisited.
 
 ### `TransactionIntentEvent`

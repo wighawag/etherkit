@@ -203,13 +203,14 @@ export type ExpectedUpdate = {
 	 * `fromBlock..latest`.
 	 *
 	 * Rule for the detection pass: while this watch is still open, an intent
-	 * whose transactions are ALL dropped must NOT be reported as final. The
-	 * expected effect can still arrive from somewhere else.
+	 * whose transactions are ALL dropped must NOT be reported as final: the
+	 * expected effect can still arrive from somewhere else, e.g. from a
+	 * resubmission the user made in their wallet.
 	 *
-	 * The observer never revisits an inclusion, in either direction: an intent
-	 * whose stored state was proved `via: {kind: 'expectedUpdate'}` keeps that
-	 * state unless one of its own attempts succeeds. The
-	 * expected effect can still arrive from somewhere else.
+	 * This is only decidable when `until` is set. An unbounded watch can never
+	 * conclude that the effect will not arrive, so it must not hold finality
+	 * open either: without `until`, the drop finalises as usual and the watch
+	 * is best-effort, running for as long as the consumer keeps the intent.
 	 */
 	until?: ExpectedUpdateUntil;
 } & (
