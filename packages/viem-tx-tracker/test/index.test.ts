@@ -1094,13 +1094,13 @@ describe('TrackedTransaction Discriminated Union', () => {
 		});
 	});
 
-	describe('transaction:fetched event', () => {
-		it('should emit KnownTrackedTransaction via transaction:fetched for sendTransaction', async () => {
+	describe('transaction:known event', () => {
+		it('should emit KnownTrackedTransaction via transaction:known for sendTransaction', async () => {
 			const broadcastListener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 
 			trackedClient.on('transaction:broadcasted', broadcastListener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -1111,7 +1111,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			// Wait for the async fetch to complete
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
@@ -1122,25 +1122,25 @@ describe('TrackedTransaction Discriminated Union', () => {
 				broadcastListener.mock.calls[0][0];
 			expect(broadcastEvent.known).toBe(false);
 
-			// transaction:fetched should have known=true with full data
-			expect(fetchedListener).toHaveBeenCalledTimes(1);
-			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
-				fetchedListener.mock.calls[0][0];
-			expect(fetchedEvent.known).toBe(true);
-			expect(fetchedEvent.hash).toBe(txHash);
-			expect(fetchedEvent.metadata?.id).toBe('fetched-event-test');
-			expect(typeof fetchedEvent.gasParameters.gas).toBe('bigint');
-			expect(typeof fetchedEvent.nonce).toBe('number');
-			expect(fetchedEvent.txType).toBeDefined();
+			// transaction:known should have known=true with full data
+			expect(knownListener).toHaveBeenCalledTimes(1);
+			const knownEvent: KnownTrackedTransaction<TestMetadata> =
+				knownListener.mock.calls[0][0];
+			expect(knownEvent.known).toBe(true);
+			expect(knownEvent.hash).toBe(txHash);
+			expect(knownEvent.metadata?.id).toBe('fetched-event-test');
+			expect(typeof knownEvent.gasParameters.gas).toBe('bigint');
+			expect(typeof knownEvent.nonce).toBe('number');
+			expect(knownEvent.txType).toBeDefined();
 
 			// Cleanup
 			trackedClient.off('transaction:broadcasted', broadcastListener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
-		it('should emit transaction:fetched for sendRawTransaction', async () => {
+		it('should emit transaction:known for sendRawTransaction', async () => {
 			const nonce = await publicClient.getTransactionCount({
 				address: account.address,
 				blockTag: 'pending',
@@ -1156,10 +1156,10 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			const broadcastListener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 
 			trackedClient.on('transaction:broadcasted', broadcastListener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendRawTransaction({
 				serializedTransaction: signedTx,
@@ -1171,28 +1171,28 @@ describe('TrackedTransaction Discriminated Union', () => {
 			// For raw transactions, both events should fire immediately
 			// (no async fetch needed)
 			expect(broadcastListener).toHaveBeenCalledTimes(1);
-			expect(fetchedListener).toHaveBeenCalledTimes(1);
+			expect(knownListener).toHaveBeenCalledTimes(1);
 
 			// Both should have the same known tx data
 			const broadcastEvent: TrackedTransaction<TestMetadata> =
 				broadcastListener.mock.calls[0][0];
-			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
-				fetchedListener.mock.calls[0][0];
+			const knownEvent: KnownTrackedTransaction<TestMetadata> =
+				knownListener.mock.calls[0][0];
 
 			expect(broadcastEvent.known).toBe(true);
-			expect(fetchedEvent.known).toBe(true);
-			expect(broadcastEvent.hash).toBe(fetchedEvent.hash);
+			expect(knownEvent.known).toBe(true);
+			expect(broadcastEvent.hash).toBe(knownEvent.hash);
 
 			// Cleanup
 			trackedClient.off('transaction:broadcasted', broadcastListener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
-		it('should allow unsubscribing from transaction:fetched', async () => {
-			const fetchedListener = vi.fn();
-			trackedClient.on('transaction:fetched', fetchedListener);
+		it('should allow unsubscribing from transaction:known', async () => {
+			const knownListener = vi.fn();
+			trackedClient.on('transaction:known', knownListener);
 
 			// First transaction
 			const txHash1 = await trackedClient.sendTransaction({
@@ -1201,13 +1201,13 @@ describe('TrackedTransaction Discriminated Union', () => {
 			});
 
 			// Wait for async fetch
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
 
 			// Unsubscribe
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 
 			// Second transaction
 			const txHash2 = await trackedClient.sendTransaction({
@@ -1219,7 +1219,7 @@ describe('TrackedTransaction Discriminated Union', () => {
 			// waiting for the tx to be mined, then a further grace period.
 			await publicClient.waitForTransactionReceipt({hash: txHash2});
 			await new Promise((resolve) => setTimeout(resolve, 500));
-			expect(fetchedListener).toHaveBeenCalledTimes(1); // Still 1, not 2
+			expect(knownListener).toHaveBeenCalledTimes(1); // Still 1, not 2
 
 			await publicClient.waitForTransactionReceipt({hash: txHash1});
 		});
@@ -1390,10 +1390,10 @@ describe('transaction source', () => {
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
-		it('should include the source in transaction:fetched (survives the unknown-to-known rebuild)', async () => {
+		it('should include the source in transaction:known (survives the unknown-to-known rebuild)', async () => {
 			const trackedClient = clientWithSource('payer-wallet');
-			const fetchedListener = vi.fn();
-			trackedClient.on('transaction:fetched', fetchedListener);
+			const knownListener = vi.fn();
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -1402,27 +1402,27 @@ describe('transaction source', () => {
 			});
 
 			// Wait for the async fetch to complete
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
 
 			const event: KnownTrackedTransaction<TestMetadata, TestSource> =
-				fetchedListener.mock.calls[0][0];
+				knownListener.mock.calls[0][0];
 			expect(event.known).toBe(true);
 			expect(event.hash).toBe(txHash);
 			expect(event.source).toBe('payer-wallet');
 
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
 		it('should include the source on both events for sendRawTransaction', async () => {
 			const trackedClient = clientWithSource('connected-wallet');
 			const broadcastListener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 			trackedClient.on('transaction:broadcasted', broadcastListener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const signedTx = await signRawTransaction();
 			const txHash = await trackedClient.sendRawTransaction({
@@ -1431,17 +1431,17 @@ describe('transaction source', () => {
 			});
 
 			expect(broadcastListener).toHaveBeenCalledTimes(1);
-			expect(fetchedListener).toHaveBeenCalledTimes(1);
+			expect(knownListener).toHaveBeenCalledTimes(1);
 
 			const broadcastEvent: TrackedTransaction<TestMetadata, TestSource> =
 				broadcastListener.mock.calls[0][0];
-			const fetchedEvent: KnownTrackedTransaction<TestMetadata, TestSource> =
-				fetchedListener.mock.calls[0][0];
+			const knownEvent: KnownTrackedTransaction<TestMetadata, TestSource> =
+				knownListener.mock.calls[0][0];
 			expect(broadcastEvent.source).toBe('connected-wallet');
-			expect(fetchedEvent.source).toBe('connected-wallet');
+			expect(knownEvent.source).toBe('connected-wallet');
 
 			trackedClient.off('transaction:broadcasted', broadcastListener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
@@ -1486,9 +1486,9 @@ describe('transaction source', () => {
 			}).using(walletClient, publicClient);
 
 			const listener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 			trackedClient.on('transaction:broadcasted', listener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -1497,7 +1497,7 @@ describe('transaction source', () => {
 			});
 
 			// Wait for the async fetch to complete
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
@@ -1509,16 +1509,14 @@ describe('transaction source', () => {
 
 			// the auto-populate builder rebuilds the fetched tx in its own copy of
 			// the code path, so it is checked separately from the standard builder
-			const fetchedEvent: KnownTrackedTransaction<
-				PopulatedMetadata,
-				TestSource
-			> = fetchedListener.mock.calls[0][0];
-			expect(fetchedEvent.known).toBe(true);
-			expect(fetchedEvent.hash).toBe(txHash);
-			expect(fetchedEvent.source).toBe('payer-wallet');
+			const knownEvent: KnownTrackedTransaction<PopulatedMetadata, TestSource> =
+				knownListener.mock.calls[0][0];
+			expect(knownEvent.known).toBe(true);
+			expect(knownEvent.hash).toBe(txHash);
+			expect(knownEvent.source).toBe('payer-wallet');
 
 			trackedClient.off('transaction:broadcasted', listener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
@@ -1619,8 +1617,8 @@ describe('transaction source', () => {
 				{source: thunk},
 			).using(walletClient, publicClient);
 
-			const fetchedListener = vi.fn();
-			trackedClient.on('transaction:fetched', fetchedListener);
+			const knownListener = vi.fn();
+			trackedClient.on('transaction:known', knownListener);
 
 			const signedTx = await signRawTransaction();
 			const txHash = await trackedClient.sendRawTransaction({
@@ -1629,10 +1627,10 @@ describe('transaction source', () => {
 
 			expect(thunk).toHaveBeenCalledTimes(1);
 			const event: KnownTrackedTransaction<TestMetadata, TestSource> =
-				fetchedListener.mock.calls[0][0];
+				knownListener.mock.calls[0][0];
 			expect(event.source).toBe('payer-wallet');
 
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 	});
@@ -1645,32 +1643,32 @@ describe('transaction source', () => {
 			);
 
 			const broadcastListener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 			trackedClient.on('transaction:broadcasted', broadcastListener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
 				value: parseEther('0.01'),
 			});
 
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
 
 			const broadcastEvent: TrackedTransaction<TestMetadata> =
 				broadcastListener.mock.calls[0][0];
-			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
-				fetchedListener.mock.calls[0][0];
+			const knownEvent: KnownTrackedTransaction<TestMetadata> =
+				knownListener.mock.calls[0][0];
 			// the field is present and undefined, not missing
 			expect('source' in broadcastEvent).toBe(true);
-			expect('source' in fetchedEvent).toBe(true);
+			expect('source' in knownEvent).toBe(true);
 			expect(broadcastEvent.source).toBeUndefined();
-			expect(fetchedEvent.source).toBeUndefined();
+			expect(knownEvent.source).toBeUndefined();
 
 			trackedClient.off('transaction:broadcasted', broadcastListener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 	});
@@ -2047,10 +2045,10 @@ describe('transaction correlation', () => {
 		});
 	});
 
-	describe('reaches transaction:fetched unchanged', () => {
+	describe('reaches transaction:known unchanged', () => {
 		it('survives the unknown-to-known rebuild for sendTransaction', async () => {
-			const fetchedListener = vi.fn();
-			trackedClient.on('transaction:fetched', fetchedListener);
+			const knownListener = vi.fn();
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -2058,26 +2056,26 @@ describe('transaction correlation', () => {
 				correlation: 'op-fetched',
 			});
 
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
 
 			const event: KnownTrackedTransaction<TestMetadata> =
-				fetchedListener.mock.calls[0][0];
+				knownListener.mock.calls[0][0];
 			expect(event.known).toBe(true);
 			expect(event.hash).toBe(txHash);
 			expect(event.correlation).toBe('op-fetched');
 
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
 		it('is carried on both events for sendRawTransaction', async () => {
 			const broadcastListener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 			trackedClient.on('transaction:broadcasted', broadcastListener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const signedTx = await signRawTransaction();
 			const txHash = await trackedClient.sendRawTransaction({
@@ -2086,16 +2084,16 @@ describe('transaction correlation', () => {
 			});
 
 			expect(broadcastListener).toHaveBeenCalledTimes(1);
-			expect(fetchedListener).toHaveBeenCalledTimes(1);
+			expect(knownListener).toHaveBeenCalledTimes(1);
 			expect(broadcastListener.mock.calls[0][0].correlation).toBe(
 				'op-raw-both-events',
 			);
-			expect(fetchedListener.mock.calls[0][0].correlation).toBe(
+			expect(knownListener.mock.calls[0][0].correlation).toBe(
 				'op-raw-both-events',
 			);
 
 			trackedClient.off('transaction:broadcasted', broadcastListener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
@@ -2104,8 +2102,8 @@ describe('transaction correlation', () => {
 				populateMetadata: true,
 			}).using(walletClient, publicClient);
 
-			const fetchedListener = vi.fn();
-			autoPopulateClient.on('transaction:fetched', fetchedListener);
+			const knownListener = vi.fn();
+			autoPopulateClient.on('transaction:known', knownListener);
 
 			const txHash = await autoPopulateClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
@@ -2114,17 +2112,17 @@ describe('transaction correlation', () => {
 				correlation: 'op-auto-fetched',
 			});
 
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
 
 			const event: KnownTrackedTransaction<PopulatedMetadata> =
-				fetchedListener.mock.calls[0][0];
+				knownListener.mock.calls[0][0];
 			expect(event.hash).toBe(txHash);
 			expect(event.correlation).toBe('op-auto-fetched');
 
-			autoPopulateClient.off('transaction:fetched', fetchedListener);
+			autoPopulateClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 	});
@@ -2132,29 +2130,29 @@ describe('transaction correlation', () => {
 	describe('when not supplied', () => {
 		it('is undefined on both events, and not an error', async () => {
 			const broadcastListener = vi.fn();
-			const fetchedListener = vi.fn();
+			const knownListener = vi.fn();
 			trackedClient.on('transaction:broadcasted', broadcastListener);
-			trackedClient.on('transaction:fetched', fetchedListener);
+			trackedClient.on('transaction:known', knownListener);
 
 			const txHash = await trackedClient.sendTransaction({
 				to: RECIPIENT_ADDRESS,
 				value: parseEther('0.01'),
 			});
 
-			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+			await vi.waitFor(() => expect(knownListener).toHaveBeenCalledTimes(1), {
 				timeout: 10000,
 				interval: 50,
 			});
 
 			const broadcastEvent: TrackedTransaction<TestMetadata> =
 				broadcastListener.mock.calls[0][0];
-			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
-				fetchedListener.mock.calls[0][0];
+			const knownEvent: KnownTrackedTransaction<TestMetadata> =
+				knownListener.mock.calls[0][0];
 			expect(broadcastEvent.correlation).toBeUndefined();
-			expect(fetchedEvent.correlation).toBeUndefined();
+			expect(knownEvent.correlation).toBeUndefined();
 
 			trackedClient.off('transaction:broadcasted', broadcastListener);
-			trackedClient.off('transaction:fetched', fetchedListener);
+			trackedClient.off('transaction:known', knownListener);
 			await publicClient.waitForTransactionReceipt({hash: txHash});
 		});
 
@@ -2501,9 +2499,9 @@ describe('builder parity', () => {
 	}
 
 	/**
-	 * sendRawTransaction used to emit transaction:fetched on the standard
+	 * sendRawTransaction used to emit transaction:known on the standard
 	 * builder but not on the auto-populate one, so a consumer that persisted on
-	 * transaction:fetched silently lost every raw transaction, but only when
+	 * transaction:known silently lost every raw transaction, but only when
 	 * populateMetadata was on. The flag has nothing to do with raw sends.
 	 */
 	it('emits the same events for sendRawTransaction in both modes', async () => {
@@ -2520,13 +2518,13 @@ describe('builder parity', () => {
 		standardClient.on('transaction:broadcasted', () =>
 			standardEvents.push('broadcasted'),
 		);
-		standardClient.on('transaction:fetched', () =>
+		standardClient.on('transaction:known', () =>
 			standardEvents.push('fetched'),
 		);
 		autoPopulateClient.on('transaction:broadcasted', () =>
 			autoEvents.push('broadcasted'),
 		);
-		autoPopulateClient.on('transaction:fetched', () =>
+		autoPopulateClient.on('transaction:known', () =>
 			autoEvents.push('fetched'),
 		);
 
@@ -2557,10 +2555,10 @@ describe('builder parity', () => {
 			populateMetadata: true,
 		}).using(walletClient, publicClient);
 
-		const standardFetched = vi.fn();
-		const autoFetched = vi.fn();
-		standardClient.on('transaction:fetched', standardFetched);
-		autoPopulateClient.on('transaction:fetched', autoFetched);
+		const standardKnown = vi.fn();
+		const autoKnown = vi.fn();
+		standardClient.on('transaction:known', standardKnown);
+		autoPopulateClient.on('transaction:known', autoKnown);
 
 		const signedTx = await signRawTransaction();
 		const standardHash = await standardClient.sendRawTransaction({
@@ -2577,12 +2575,12 @@ describe('builder parity', () => {
 		});
 		await publicClient.waitForTransactionReceipt({hash: autoHash});
 
-		expect(standardFetched).toHaveBeenCalledTimes(1);
-		expect(autoFetched).toHaveBeenCalledTimes(1);
-		expect(standardFetched.mock.calls[0][0].correlation).toBe(
+		expect(standardKnown).toHaveBeenCalledTimes(1);
+		expect(autoKnown).toHaveBeenCalledTimes(1);
+		expect(standardKnown.mock.calls[0][0].correlation).toBe(
 			'op-parity-standard',
 		);
-		expect(autoFetched.mock.calls[0][0].correlation).toBe('op-parity-auto');
-		expect(autoFetched.mock.calls[0][0].known).toBe(true);
+		expect(autoKnown.mock.calls[0][0].correlation).toBe('op-parity-auto');
+		expect(autoKnown.mock.calls[0][0].known).toBe(true);
 	});
 });

@@ -4,7 +4,7 @@
 
 Route a broadcast back to the call that issued it, via a new opaque per-call `correlation`.
 
-Every tracked send (`writeContract`, `sendTransaction`, `sendRawTransaction`, their `*Sync` variants, in both standard and auto-populate mode) now accepts an optional `correlation`, a sibling of `metadata` and `nonce`. It is carried verbatim onto every emitted transaction, so it reaches `transaction:broadcasted` and also `transaction:fetched` wherever that event is emitted.
+Every tracked send (`writeContract`, `sendTransaction`, `sendRawTransaction`, their `*Sync` variants, in both standard and auto-populate mode) now accepts an optional `correlation`, a sibling of `metadata` and `nonce`. It is carried verbatim onto every emitted transaction, so it reaches both `transaction:broadcasted` and `transaction:known`.
 
 ```ts
 const correlation = crypto.randomUUID();
@@ -31,7 +31,7 @@ There are now three carried fields, answering three different questions:
 Two design choices worth stating:
 
 - It is typed `correlation?: string` rather than a generic type parameter. Identity is all a consumer needs in order to route an event, the value is ephemeral, and a 7th type parameter on `TrackedWalletClientType` is a real cost. It is deliberately not `unknown`, which would invite consumers to smuggle structured data into a field the tracker will never interpret.
-- It is threaded to the fetched path, not typed only on the broadcasted shape. It sits on `CommonTrackedFields`, so `transaction:fetched` (which is rebuilt from the chain fetch rather than copied from the broadcast) carries it too. Declaring the field without threading it would make the type promise something that is `undefined` at runtime, which is worse than not having the field at all.
+- It is threaded to the known-values path, not typed only on the broadcasted shape. It sits on `CommonTrackedFields`, so `transaction:known` (which is rebuilt from the chain read rather than copied from the broadcast) carries it too. Declaring the field without threading it would make the type promise something that is `undefined` at runtime, which is worse than not having the field at all.
 
 The correlation is destructured out of the arguments before the rest is spread into viem's own call, on every wrapper, so the underlying wallet never receives an unrecognised parameter. That rule is enforced twice: at compile time, by typing the forwarded rest args as `T & {correlation?: never}` so a forgotten destructure fails to build, and at test time, by asserting against a spying wallet client that the parameter object handed to viem contains no `correlation` key.
 

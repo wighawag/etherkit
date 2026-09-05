@@ -13,7 +13,7 @@ This package wraps a `WalletClient` with the same method names (`sendTransaction
 - `source`: an opaque marker of which signing route produced it, in your own type
 - `correlation`: an opaque marker of which caller-side request a send answers, supplied per call
 
-It also resolves the nonce for you (`pending` by default) and, once broadcast, fetches the transaction back from the chain and emits a second event with the values the chain actually recorded.
+It also resolves the nonce for you (`pending` by default) and, once broadcast, reads the transaction back from the chain and emits a second event with the values that were actually recorded.
 
 The tracker never interprets `metadata`, `source` or `correlation`. It carries them.
 
@@ -45,7 +45,7 @@ tracked.on('transaction:broadcasted', (tx) => {
   save(tx.hash, tx);
 });
 
-tracked.on('transaction:fetched', (tx) => {
+tracked.on('transaction:known', (tx) => {
   // Fires once the transaction has been read back from the chain,
   // with the values the chain actually recorded.
   save(tx.hash, tx);
@@ -182,7 +182,7 @@ The resolved nonce is injected into the request and recorded on the emitted tran
 | Event | Payload | When |
 |-------|---------|------|
 | `transaction:broadcasted` | `TrackedTransaction<TMetadata, TSource>` | Immediately after the broadcast succeeds |
-| `transaction:fetched` | `KnownTrackedTransaction<TMetadata, TSource>` | Once the transaction has been read back from the chain |
+| `transaction:known` | `KnownTrackedTransaction<TMetadata, TSource>` | Once the values are known to be final rather than intended |
 
 ```typescript
 const unsubscribe = tracked.on('transaction:broadcasted', listener);
@@ -191,9 +191,16 @@ unsubscribe();
 tracked.off('transaction:broadcasted', listener);
 ```
 
-`transaction:fetched` is best effort: if the fetch fails (not in the mempool yet, network trouble) it simply does not fire, and a warning is logged. Treat `transaction:broadcasted` as the event you must handle and `transaction:fetched` as a refinement.
+`transaction:known` says the values are the final ones, not the ones you intended. It deliberately names that promise rather than the mechanism, because the mechanism differs: for a normal send the transaction is read back from the chain, and for `sendRawTransaction` the values are parsed from the signed payload, which needs no network call at all. Both produce final values, so both emit the event, and you can persist on it alone.
 
-For `sendRawTransaction` the full transaction can be parsed from the signed payload, so `transaction:broadcasted` already carries confirmed values (`known: true`) and no separate fetch is needed. `transaction:fetched` is still emitted, with the same object, so that every tracked transaction reaches it and a consumer can persist on that one event alone. Despite the name, what the event promises is that the values are final rather than intended, which is true whether they were read from the chain or parsed from a signed payload.
+It does not say the transaction was mined. It fires while the transaction is still in the mempool, so it is not a substitute for waiting on a receipt.
+
+The two paths differ in reliability, which the name cannot express, so it is worth stating plainly:
+
+- **Normal sends**: best effort. If the read fails (not in the mempool yet, network trouble) the event simply never fires and a warning is logged.
+- **Raw sends**: always fires, immediately, since nothing can fail. The same object is delivered to `transaction:broadcasted` first, so a handler subscribed to both sees that transaction twice.
+
+Treat `transaction:broadcasted` as the event you must handle, and `transaction:known` as a refinement that is usually but not always delivered.
 
 ## The transaction shape
 
@@ -230,9 +237,9 @@ if (tx.txType === 'eip1559') {
 }
 ```
 
-For a broadcast transaction (`known: false`) the type is inferred from what you provided: `maxFeePerGas` gives `eip1559`, `gasPrice` with an `accessList` gives `eip2930`, `gasPrice` alone gives `legacy`, and nothing gives `txType: undefined`, meaning the wallet will decide. On a fetched transaction (`known: true`) the type and its gas values are the ones the chain recorded, and every gas field is present.
+For a broadcast transaction (`known: false`) the type is inferred from what you provided: `maxFeePerGas` gives `eip1559`, `gasPrice` with an `accessList` gives `eip2930`, `gasPrice` alone gives `legacy`, and nothing gives `txType: undefined`, meaning the wallet will decide. On a known transaction (`known: true`) the type and its gas values are the final ones, and every gas field is present.
 
-`from` and `nonce` are re-read from the chain on `transaction:fetched`. `metadata`, `source` and `correlation` are not observable on chain, so they are carried through from dispatch unchanged, on every event that carries a transaction.
+`from` and `nonce` are re-read from the chain on `transaction:known`. `metadata`, `source` and `correlation` are not observable on chain, so they are carried through from dispatch unchanged, on every event that carries a transaction.
 
 ## API
 

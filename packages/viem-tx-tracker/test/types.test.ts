@@ -52,7 +52,7 @@ function typeLevelAssertions() {
 	const autoPopulate = createTrackedWalletClient({
 		populateMetadata: true,
 	}).using(walletClient, publicClient);
-	autoPopulate.on('transaction:fetched', (tx) => {
+	autoPopulate.on('transaction:known', (tx) => {
 		const metadata: PopulatedMetadata = tx.metadata;
 		const source: undefined = tx.source;
 		return [metadata, source];
@@ -69,7 +69,7 @@ function typeLevelAssertions() {
 			return source;
 		},
 	);
-	sourced.on('transaction:fetched', (tx) => {
+	sourced.on('transaction:known', (tx) => {
 		const source: TestSource = tx.source;
 		return source;
 	});
@@ -124,7 +124,7 @@ function typeLevelAssertions() {
 		const correlation: string | undefined = tx.correlation;
 		return correlation;
 	});
-	untyped.on('transaction:fetched', (tx) => {
+	untyped.on('transaction:known', (tx) => {
 		// threaded to the fetched path too, so the type is not a lie at runtime
 		const correlation: string | undefined = tx.correlation;
 		return correlation;

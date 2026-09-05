@@ -188,8 +188,8 @@ type CommonTrackedFields<TMetadata, TSource = undefined> = {
 	/**
 	 * Opaque marker of which caller-side request this send answers, supplied per
 	 * call and carried verbatim: the tracker never inspects or interprets it.
-	 * Carried on every emitted transaction, so it is on `transaction:fetched`
-	 * wherever that event is emitted, not only on `transaction:broadcasted`.
+	 * Carried on every emitted transaction, so it reaches `transaction:known`
+	 * as well as `transaction:broadcasted`.
 	 *
 	 * Ephemeral plumbing, unlike its two siblings: `metadata` is what the
 	 * application says the transaction MEANS and `source` is WHICH SIGNING ROUTE
@@ -213,9 +213,10 @@ type CommonTrackedFields<TMetadata, TSource = undefined> = {
 };
 
 /**
- * A fully known tracked transaction with all fields confirmed from chain.
- * Emitted via transaction:fetched when tx data is fetched from chain,
- * or immediately for sendRawTransaction where we can parse the tx.
+ * A fully known tracked transaction: every field is a final value.
+ * Emitted via transaction:known, either once the tx has been read back from
+ * the chain, or immediately for sendRawTransaction where the signed payload
+ * can be parsed.
  *
  * When known=true, all values are the actual confirmed values used by the chain.
  * Uses discriminated union by txType to enforce correct field combinations.
@@ -322,7 +323,8 @@ export type UnknownTrackedTransaction<
 
 /**
  * A tracked transaction - discriminated by 'known' field.
- * - known=true: Values are confirmed from chain fetch
+ * - known=true: Values are final, read back from chain or parsed from a
+ *   signed payload
  * - known=false: Values are intended/provided, may differ from actual
  */
 export type TrackedTransaction<TMetadata, TSource = undefined> =
@@ -658,10 +660,25 @@ export type TrackedWalletClientEvents<TMetadata, TSource = undefined> = {
 	 */
 	'transaction:broadcasted': TrackedTransaction<TMetadata, TSource>;
 	/**
-	 * Emitted when full transaction data is successfully fetched from chain.
-	 * Not guaranteed to fire if fetch fails (tx not in mempool yet, network issues, etc.)
+	 * Emitted when the transaction's values are known to be the final ones
+	 * rather than the ones that were merely intended.
+	 *
+	 * The name states the promise, not the mechanism, because the mechanism
+	 * differs by path: the values are read back from the chain for a normal
+	 * send, and parsed from the signed payload for a raw send. Both yield final
+	 * values, so both emit this event, and a consumer can persist on it alone.
+	 *
+	 * Note the two paths differ in RELIABILITY, which the name cannot express:
+	 *
+	 * - Normal sends: best effort. If the read fails (not in the mempool yet,
+	 *   network trouble) this simply never fires and a warning is logged.
+	 * - Raw sends: always fires, immediately, since nothing can fail. The same
+	 *   object is delivered to `transaction:broadcasted` first.
+	 *
+	 * So treat `transaction:broadcasted` as the event you must handle, and this
+	 * one as a refinement that is usually but not always delivered.
 	 */
-	'transaction:fetched': KnownTrackedTransaction<TMetadata, TSource>;
+	'transaction:known': KnownTrackedTransaction<TMetadata, TSource>;
 };
 
 /**

@@ -649,7 +649,7 @@ export function createTrackedWalletClient<
 			// Create emitter for transaction events
 			const emitter = new Emitter<{
 				'transaction:broadcasted': TrackedTransaction<TMetadata, TSource>;
-				'transaction:fetched': KnownTrackedTransaction<TMetadata, TSource>;
+				'transaction:known': KnownTrackedTransaction<TMetadata, TSource>;
 			}>();
 
 			/**
@@ -705,7 +705,7 @@ export function createTrackedWalletClient<
 			}
 
 			/**
-			 * Fetch full transaction data and emit transaction:fetched event.
+			 * Fetch full transaction data and emit transaction:known event.
 			 * Non-blocking, runs in background. Does not throw.
 			 */
 			async function fetchAndEmitFullData(
@@ -720,12 +720,12 @@ export function createTrackedWalletClient<
 						carried,
 						broadcastTimestampMs,
 					);
-					emitter.emit('transaction:fetched', knownTx);
+					emitter.emit('transaction:known', knownTx);
 				} catch (error) {
-					// Log but don't throw - transaction:fetched simply won't fire
+					// Log but don't throw - transaction:known simply won't fire
 					console.warn(
 						`[TrackedWalletClient] Could not fetch tx ${hash}. ` +
-							`transaction:fetched event will not be emitted. Error: ${error}`,
+							`transaction:known event will not be emitted. Error: ${error}`,
 					);
 				}
 			}
@@ -733,7 +733,7 @@ export function createTrackedWalletClient<
 			/**
 			 * Common wrapper for transaction methods that broadcast (sendTransaction, writeContract).
 			 * Emits transaction:broadcasted immediately with intended values,
-			 * then fetches and emits transaction:fetched with actual values.
+			 * then fetches and emits transaction:known with actual values.
 			 */
 			async function executeTrackedTransaction<T, R>(args: {
 				account?: Account | Address;
@@ -798,7 +798,7 @@ export function createTrackedWalletClient<
 				);
 				emitter.emit('transaction:broadcasted', unknownTx);
 
-				// Fire-and-forget: fetch full data and emit transaction:fetched
+				// Fire-and-forget: fetch full data and emit transaction:known
 				fetchAndEmitFullData(hash, carried, broadcastTimestampMs);
 
 				return result;
@@ -854,11 +854,11 @@ export function createTrackedWalletClient<
 				// Emit as KnownTrackedTransaction since we have all data
 				emitter.emit('transaction:broadcasted', knownTx);
 
-				// Every tracked transaction reaches transaction:fetched, so a consumer
-				// can persist on that one event alone. Nothing was fetched here (the
-				// values were parsed from the signed payload) but they are the final
-				// ones, which is what the event actually promises.
-				emitter.emit('transaction:fetched', knownTx);
+				// The values are final (parsed from the signed payload, not merely
+				// intended), which is exactly what transaction:known promises, so it
+				// is emitted here too: every tracked transaction reaches that event,
+				// and a consumer can persist on it alone.
+				emitter.emit('transaction:known', knownTx);
 
 				return result;
 			}
@@ -1077,7 +1077,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 			// Create emitter for transaction events
 			const emitter = new Emitter<{
 				'transaction:broadcasted': TrackedTransaction<TMetadata, TSource>;
-				'transaction:fetched': KnownTrackedTransaction<TMetadata, TSource>;
+				'transaction:known': KnownTrackedTransaction<TMetadata, TSource>;
 			}>();
 
 			/**
@@ -1119,7 +1119,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 			}
 
 			/**
-			 * Fetch full transaction data and emit transaction:fetched event.
+			 * Fetch full transaction data and emit transaction:known event.
 			 * Non-blocking, runs in background. Does not throw.
 			 */
 			async function fetchAndEmitFullData(
@@ -1134,12 +1134,12 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						carried,
 						broadcastTimestampMs,
 					);
-					emitter.emit('transaction:fetched', knownTx);
+					emitter.emit('transaction:known', knownTx);
 				} catch (error) {
-					// Log but don't throw - transaction:fetched simply won't fire
+					// Log but don't throw - transaction:known simply won't fire
 					console.warn(
 						`[TrackedWalletClient] Could not fetch tx ${hash}. ` +
-							`transaction:fetched event will not be emitted. Error: ${error}`,
+							`transaction:known event will not be emitted. Error: ${error}`,
 					);
 				}
 			}
@@ -1176,7 +1176,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 			/**
 			 * Common wrapper for transaction methods that broadcast.
 			 * Emits transaction:broadcasted immediately with intended values,
-			 * then fetches and emits transaction:fetched with actual values.
+			 * then fetches and emits transaction:known with actual values.
 			 */
 			async function executeTrackedTransaction<T, R>(args: {
 				account?: Account | Address;
@@ -1239,7 +1239,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 				);
 				emitter.emit('transaction:broadcasted', unknownTx);
 
-				// Fire-and-forget: fetch full data and emit transaction:fetched
+				// Fire-and-forget: fetch full data and emit transaction:known
 				fetchAndEmitFullData(hash, carried, broadcastTimestampMs);
 
 				return result;
@@ -1294,11 +1294,11 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 				// Emit as KnownTrackedTransaction since we have all data
 				emitter.emit('transaction:broadcasted', knownTx);
 
-				// Every tracked transaction reaches transaction:fetched, so a consumer
-				// can persist on that one event alone. Nothing was fetched here (the
-				// values were parsed from the signed payload) but they are the final
-				// ones, which is what the event actually promises.
-				emitter.emit('transaction:fetched', knownTx);
+				// The values are final (parsed from the signed payload, not merely
+				// intended), which is exactly what transaction:known promises, so it
+				// is emitted here too: every tracked transaction reaches that event,
+				// and a consumer can persist on it alone.
+				emitter.emit('transaction:known', knownTx);
 
 				return result;
 			}
