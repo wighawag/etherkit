@@ -854,7 +854,10 @@ export function createTrackedWalletClient<
 				// Emit as KnownTrackedTransaction since we have all data
 				emitter.emit('transaction:broadcasted', knownTx);
 
-				// Also emit to transaction:fetched for consistency
+				// Every tracked transaction reaches transaction:fetched, so a consumer
+				// can persist on that one event alone. Nothing was fetched here (the
+				// values were parsed from the signed payload) but they are the final
+				// ones, which is what the event actually promises.
 				emitter.emit('transaction:fetched', knownTx);
 
 				return result;
@@ -1291,7 +1294,11 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 				// Emit as KnownTrackedTransaction since we have all data
 				emitter.emit('transaction:broadcasted', knownTx);
 
-				// We do not emit fetched as the tx is already known
+				// Every tracked transaction reaches transaction:fetched, so a consumer
+				// can persist on that one event alone. Nothing was fetched here (the
+				// values were parsed from the signed payload) but they are the final
+				// ones, which is what the event actually promises.
+				emitter.emit('transaction:fetched', knownTx);
 
 				return result;
 			}

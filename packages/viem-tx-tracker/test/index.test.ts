@@ -2461,3 +2461,128 @@ describe('transaction correlation', () => {
 		});
 	});
 });
+
+/**
+ * The two builders are hand-duplicated near-clones. Anything a consumer can
+ * observe must be identical between them, or a feature flag silently changes
+ * behaviour that has nothing to do with the flag.
+ */
+describe('builder parity', () => {
+	let publicClient: PublicClient;
+	let walletClient: WalletClient<Transport, Chain, Account>;
+	let account: ReturnType<typeof privateKeyToAccount>;
+
+	beforeAll(() => {
+		account = privateKeyToAccount(TEST_PRIVATE_KEY);
+		publicClient = createPublicClient({
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+		walletClient = createWalletClient({
+			account,
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+	});
+
+	async function signRawTransaction() {
+		const nonce = await publicClient.getTransactionCount({
+			address: account.address,
+			blockTag: 'pending',
+		});
+		return await walletClient.signTransaction({
+			to: RECIPIENT_ADDRESS,
+			value: parseEther('0.01'),
+			nonce,
+			gas: 21000n,
+			maxFeePerGas: parseEther('0.000000002'),
+			maxPriorityFeePerGas: parseEther('0.000000001'),
+		});
+	}
+
+	/**
+	 * sendRawTransaction used to emit transaction:fetched on the standard
+	 * builder but not on the auto-populate one, so a consumer that persisted on
+	 * transaction:fetched silently lost every raw transaction, but only when
+	 * populateMetadata was on. The flag has nothing to do with raw sends.
+	 */
+	it('emits the same events for sendRawTransaction in both modes', async () => {
+		const standardClient = createTrackedWalletClient<TestMetadata>().using(
+			walletClient,
+			publicClient,
+		);
+		const autoPopulateClient = createTrackedWalletClient({
+			populateMetadata: true,
+		}).using(walletClient, publicClient);
+
+		const standardEvents: string[] = [];
+		const autoEvents: string[] = [];
+		standardClient.on('transaction:broadcasted', () =>
+			standardEvents.push('broadcasted'),
+		);
+		standardClient.on('transaction:fetched', () =>
+			standardEvents.push('fetched'),
+		);
+		autoPopulateClient.on('transaction:broadcasted', () =>
+			autoEvents.push('broadcasted'),
+		);
+		autoPopulateClient.on('transaction:fetched', () =>
+			autoEvents.push('fetched'),
+		);
+
+		const signedTx = await signRawTransaction();
+		const standardHash = await standardClient.sendRawTransaction({
+			serializedTransaction: signedTx,
+		});
+		await publicClient.waitForTransactionReceipt({hash: standardHash});
+
+		const signedTx2 = await signRawTransaction();
+		const autoHash = await autoPopulateClient.sendRawTransaction({
+			serializedTransaction: signedTx2,
+			metadata: {type: 'unknown', name: 'raw-transfer', data: []},
+		});
+		await publicClient.waitForTransactionReceipt({hash: autoHash});
+
+		expect(standardEvents).toEqual(['broadcasted', 'fetched']);
+		// the flag must not change which events a raw send produces
+		expect(autoEvents).toEqual(standardEvents);
+	});
+
+	it('carries the correlation onto both events in both modes', async () => {
+		const standardClient = createTrackedWalletClient<TestMetadata>().using(
+			walletClient,
+			publicClient,
+		);
+		const autoPopulateClient = createTrackedWalletClient({
+			populateMetadata: true,
+		}).using(walletClient, publicClient);
+
+		const standardFetched = vi.fn();
+		const autoFetched = vi.fn();
+		standardClient.on('transaction:fetched', standardFetched);
+		autoPopulateClient.on('transaction:fetched', autoFetched);
+
+		const signedTx = await signRawTransaction();
+		const standardHash = await standardClient.sendRawTransaction({
+			serializedTransaction: signedTx,
+			correlation: 'op-parity-standard',
+		});
+		await publicClient.waitForTransactionReceipt({hash: standardHash});
+
+		const signedTx2 = await signRawTransaction();
+		const autoHash = await autoPopulateClient.sendRawTransaction({
+			serializedTransaction: signedTx2,
+			metadata: {type: 'unknown', name: 'raw-transfer', data: []},
+			correlation: 'op-parity-auto',
+		});
+		await publicClient.waitForTransactionReceipt({hash: autoHash});
+
+		expect(standardFetched).toHaveBeenCalledTimes(1);
+		expect(autoFetched).toHaveBeenCalledTimes(1);
+		expect(standardFetched.mock.calls[0][0].correlation).toBe(
+			'op-parity-standard',
+		);
+		expect(autoFetched.mock.calls[0][0].correlation).toBe('op-parity-auto');
+		expect(autoFetched.mock.calls[0][0].known).toBe(true);
+	});
+});

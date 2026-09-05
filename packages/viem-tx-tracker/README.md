@@ -193,7 +193,7 @@ tracked.off('transaction:broadcasted', listener);
 
 `transaction:fetched` is best effort: if the fetch fails (not in the mempool yet, network trouble) it simply does not fire, and a warning is logged. Treat `transaction:broadcasted` as the event you must handle and `transaction:fetched` as a refinement.
 
-For `sendRawTransaction` the full transaction can be parsed from the signed payload, so `transaction:broadcasted` already carries confirmed values (`known: true`) and no separate fetch is needed.
+For `sendRawTransaction` the full transaction can be parsed from the signed payload, so `transaction:broadcasted` already carries confirmed values (`known: true`) and no separate fetch is needed. `transaction:fetched` is still emitted, with the same object, so that every tracked transaction reaches it and a consumer can persist on that one event alone. Despite the name, what the event promises is that the values are final rather than intended, which is true whether they were read from the chain or parsed from a signed payload.
 
 ## The transaction shape
 
