@@ -1675,3 +1675,789 @@ describe('transaction source', () => {
 		});
 	});
 });
+
+/**
+ * The correlation is an opaque, per-call marker tying a send back to the
+ * caller-side request that issued it. The tracker carries it and never
+ * interprets it, and it must never reach the underlying viem call.
+ */
+describe('transaction correlation', () => {
+	let publicClient: PublicClient;
+	let walletClient: WalletClient<Transport, Chain, Account>;
+	let account: ReturnType<typeof privateKeyToAccount>;
+	let trackedClient: TrackedWalletClient<
+		TestMetadata,
+		Transport,
+		Chain,
+		Account
+	>;
+	let tokenAddress: Address;
+
+	beforeAll(async () => {
+		account = privateKeyToAccount(TEST_PRIVATE_KEY);
+
+		publicClient = createPublicClient({
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		walletClient = createWalletClient({
+			account,
+			chain: foundry,
+			transport: http(RPC_URL),
+		});
+
+		trackedClient = createTrackedWalletClient<TestMetadata>().using(
+			walletClient,
+			publicClient,
+		);
+
+		const deployHash = await walletClient.deployContract({
+			abi: TEST_CONTRACT_ABI,
+			bytecode: TEST_CONTRACT_BYTECODE,
+			args: [account.address, parseEther('1000')],
+		});
+		const deployReceipt = await publicClient.waitForTransactionReceipt({
+			hash: deployHash,
+		});
+		tokenAddress = deployReceipt.contractAddress!;
+	});
+
+	async function signRawTransaction() {
+		const nonce = await publicClient.getTransactionCount({
+			address: account.address,
+			blockTag: 'pending',
+		});
+		return await walletClient.signTransaction({
+			to: RECIPIENT_ADDRESS,
+			value: parseEther('0.01'),
+			nonce,
+			gas: 21000n,
+			maxFeePerGas: parseEther('0.000000002'),
+			maxPriorityFeePerGas: parseEther('0.000000001'),
+		});
+	}
+
+	/**
+	 * A wallet client that records the parameter object it is handed, then
+	 * delegates to the real one. This is the only way to see what the tracker
+	 * actually forwards to viem.
+	 */
+	function createSpyingWalletClient() {
+		const calls: {method: string; args: Record<string, unknown>}[] = [];
+
+		const record =
+			<TArgs extends Record<string, unknown>, TResult>(
+				method: string,
+				delegate: (args: TArgs) => Promise<TResult>,
+			) =>
+			(args: TArgs) => {
+				calls.push({method, args});
+				return delegate(args);
+			};
+
+		const spy = {
+			...walletClient,
+			writeContract: record('writeContract', (args: any) =>
+				walletClient.writeContract(args),
+			),
+			writeContractSync: record('writeContractSync', (args: any) =>
+				walletClient.writeContractSync(args),
+			),
+			sendTransaction: record('sendTransaction', (args: any) =>
+				walletClient.sendTransaction(args),
+			),
+			sendTransactionSync: record('sendTransactionSync', (args: any) =>
+				walletClient.sendTransactionSync(args),
+			),
+			sendRawTransaction: record('sendRawTransaction', (args: any) =>
+				walletClient.sendRawTransaction(args),
+			),
+			sendRawTransactionSync: record('sendRawTransactionSync', (args: any) =>
+				walletClient.sendRawTransactionSync(args),
+			),
+		} as unknown as WalletClient<Transport, Chain, Account>;
+
+		const spyTracked = createTrackedWalletClient<TestMetadata>().using(
+			spy,
+			publicClient,
+		);
+
+		// the two builders are hand-duplicated near-clones, so the auto-populate
+		// one has to be spied on separately: a missed destructure there would not
+		// show up in the standard one
+		const spyAutoTracked = createTrackedWalletClient({
+			populateMetadata: true,
+		}).using(spy, publicClient);
+
+		return {calls, spyTracked, spyAutoTracked};
+	}
+
+	/**
+	 * Assert that what the tracker handed viem is free of the correlation.
+	 * `in` rather than `=== undefined`: a forwarded-but-undefined key is still a
+	 * key the wallet did not ask for.
+	 */
+	function expectNoCorrelationForwarded(
+		calls: {method: string; args: Record<string, unknown>}[],
+		expectedMethods: string[],
+	) {
+		// a control: if the spy were mis-wired, calls would be empty and every
+		// assertion below would vacuously pass
+		expect(calls.map((c) => c.method)).toEqual(expectedMethods);
+		for (const call of calls) {
+			expect('correlation' in call.args).toBe(false);
+			expect(call.args.correlation).toBeUndefined();
+		}
+	}
+
+	describe('reaches transaction:broadcasted unchanged', () => {
+		it('for sendTransaction', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-send-transaction',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-send-transaction');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('for sendTransactionSync', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			await trackedClient.sendTransactionSync({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-send-transaction-sync',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-send-transaction-sync');
+
+			trackedClient.off('transaction:broadcasted', listener);
+		});
+
+		it('for writeContract', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash = await trackedClient.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-write-contract',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-write-contract');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('for writeContractSync', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			await trackedClient.writeContractSync({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-write-contract-sync',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-write-contract-sync');
+
+			trackedClient.off('transaction:broadcasted', listener);
+		});
+
+		it('for sendRawTransaction', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				correlation: 'op-send-raw',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-send-raw');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('for sendRawTransactionSync', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const signedTx = await signRawTransaction();
+			await trackedClient.sendRawTransactionSync({
+				serializedTransaction: signedTx,
+				correlation: 'op-send-raw-sync',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-send-raw-sync');
+
+			trackedClient.off('transaction:broadcasted', listener);
+		});
+
+		it('for writeContract in auto-populate mode', async () => {
+			const autoPopulateClient = createTrackedWalletClient({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			autoPopulateClient.on('transaction:broadcasted', listener);
+
+			const txHash = await autoPopulateClient.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-auto-write-contract',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata> =
+				listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-auto-write-contract');
+			// the auto-populated metadata is untouched by the correlation
+			expect(event.metadata).toEqual({
+				type: 'functionCall',
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+			});
+
+			autoPopulateClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('for writeContractSync in auto-populate mode', async () => {
+			const autoPopulateClient = createTrackedWalletClient({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			autoPopulateClient.on('transaction:broadcasted', listener);
+
+			await autoPopulateClient.writeContractSync({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-auto-write-contract-sync',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata> =
+				listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-auto-write-contract-sync');
+
+			autoPopulateClient.off('transaction:broadcasted', listener);
+		});
+
+		it('for sendTransactionSync in auto-populate mode', async () => {
+			const autoPopulateClient = createTrackedWalletClient({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			autoPopulateClient.on('transaction:broadcasted', listener);
+
+			await autoPopulateClient.sendTransactionSync({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {type: 'unknown', name: 'transfer', data: []},
+				correlation: 'op-auto-send-transaction-sync',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata> =
+				listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-auto-send-transaction-sync');
+
+			autoPopulateClient.off('transaction:broadcasted', listener);
+		});
+
+		it('for sendRawTransactionSync in auto-populate mode', async () => {
+			const autoPopulateClient = createTrackedWalletClient({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			autoPopulateClient.on('transaction:broadcasted', listener);
+
+			const signedTx = await signRawTransaction();
+			await autoPopulateClient.sendRawTransactionSync({
+				serializedTransaction: signedTx,
+				metadata: {type: 'unknown', name: 'raw-transfer', data: []},
+				correlation: 'op-auto-send-raw-sync',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata> =
+				listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-auto-send-raw-sync');
+
+			autoPopulateClient.off('transaction:broadcasted', listener);
+		});
+
+		it('for sendRawTransaction in auto-populate mode', async () => {
+			const autoPopulateClient = createTrackedWalletClient({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			const listener = vi.fn();
+			autoPopulateClient.on('transaction:broadcasted', listener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await autoPopulateClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				metadata: {type: 'unknown', name: 'raw-transfer', data: []},
+				correlation: 'op-auto-send-raw',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			const event: TrackedTransaction<PopulatedMetadata> =
+				listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-auto-send-raw');
+
+			autoPopulateClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('reaches transaction:fetched unchanged', () => {
+		it('survives the unknown-to-known rebuild for sendTransaction', async () => {
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-fetched',
+			});
+
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
+
+			const event: KnownTrackedTransaction<TestMetadata> =
+				fetchedListener.mock.calls[0][0];
+			expect(event.known).toBe(true);
+			expect(event.hash).toBe(txHash);
+			expect(event.correlation).toBe('op-fetched');
+
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('is carried on both events for sendRawTransaction', async () => {
+			const broadcastListener = vi.fn();
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:broadcasted', broadcastListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+				correlation: 'op-raw-both-events',
+			});
+
+			expect(broadcastListener).toHaveBeenCalledTimes(1);
+			expect(fetchedListener).toHaveBeenCalledTimes(1);
+			expect(broadcastListener.mock.calls[0][0].correlation).toBe(
+				'op-raw-both-events',
+			);
+			expect(fetchedListener.mock.calls[0][0].correlation).toBe(
+				'op-raw-both-events',
+			);
+
+			trackedClient.off('transaction:broadcasted', broadcastListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('survives the rebuild in auto-populate mode too', async () => {
+			const autoPopulateClient = createTrackedWalletClient({
+				populateMetadata: true,
+			}).using(walletClient, publicClient);
+
+			const fetchedListener = vi.fn();
+			autoPopulateClient.on('transaction:fetched', fetchedListener);
+
+			const txHash = await autoPopulateClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {type: 'unknown', name: 'transfer', data: []},
+				correlation: 'op-auto-fetched',
+			});
+
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
+
+			const event: KnownTrackedTransaction<PopulatedMetadata> =
+				fetchedListener.mock.calls[0][0];
+			expect(event.hash).toBe(txHash);
+			expect(event.correlation).toBe('op-auto-fetched');
+
+			autoPopulateClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('when not supplied', () => {
+		it('is undefined on both events, and not an error', async () => {
+			const broadcastListener = vi.fn();
+			const fetchedListener = vi.fn();
+			trackedClient.on('transaction:broadcasted', broadcastListener);
+			trackedClient.on('transaction:fetched', fetchedListener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+			});
+
+			await vi.waitFor(() => expect(fetchedListener).toHaveBeenCalledTimes(1), {
+				timeout: 10000,
+				interval: 50,
+			});
+
+			const broadcastEvent: TrackedTransaction<TestMetadata> =
+				broadcastListener.mock.calls[0][0];
+			const fetchedEvent: KnownTrackedTransaction<TestMetadata> =
+				fetchedListener.mock.calls[0][0];
+			expect(broadcastEvent.correlation).toBeUndefined();
+			expect(fetchedEvent.correlation).toBeUndefined();
+
+			trackedClient.off('transaction:broadcasted', broadcastListener);
+			trackedClient.off('transaction:fetched', fetchedListener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('is undefined for sendRawTransaction as well', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const signedTx = await signRawTransaction();
+			const txHash = await trackedClient.sendRawTransaction({
+				serializedTransaction: signedTx,
+			});
+
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBeUndefined();
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	/**
+	 * The regression that would otherwise surface as a wallet rejecting an
+	 * unknown field: the correlation must be destructured out of the args before
+	 * the rest is spread into viem's own call.
+	 */
+	describe('is not forwarded to the underlying viem call', () => {
+		it('for sendTransaction and sendTransactionSync', async () => {
+			const {calls, spyTracked} = createSpyingWalletClient();
+
+			const txHash = await spyTracked.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-not-forwarded-send',
+			});
+			await spyTracked.sendTransactionSync({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-not-forwarded-send-sync',
+			});
+
+			expectNoCorrelationForwarded(calls, [
+				'sendTransaction',
+				'sendTransactionSync',
+			]);
+			for (const call of calls) {
+				// the spy really did see the forwarded parameter object
+				expect(typeof call.args.nonce).toBe('number');
+			}
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('for writeContract and writeContractSync', async () => {
+			const {calls, spyTracked} = createSpyingWalletClient();
+
+			const txHash = await spyTracked.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-not-forwarded-write',
+			});
+			await spyTracked.writeContractSync({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-not-forwarded-write-sync',
+			});
+
+			expectNoCorrelationForwarded(calls, [
+				'writeContract',
+				'writeContractSync',
+			]);
+			for (const call of calls) {
+				expect(typeof call.args.nonce).toBe('number');
+			}
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		// These two cannot leak by construction: the raw wrappers hand viem a fresh
+		// {serializedTransaction} literal rather than spreading the caller's args.
+		// Kept as a guard in case that ever becomes a spread.
+		it('for sendRawTransaction and sendRawTransactionSync', async () => {
+			const {calls, spyTracked} = createSpyingWalletClient();
+
+			const signedTx = await signRawTransaction();
+			const txHash = await spyTracked.sendRawTransaction({
+				serializedTransaction: signedTx,
+				correlation: 'op-not-forwarded-raw',
+			});
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+
+			const signedTx2 = await signRawTransaction();
+			await spyTracked.sendRawTransactionSync({
+				serializedTransaction: signedTx2,
+				correlation: 'op-not-forwarded-raw-sync',
+			});
+
+			expectNoCorrelationForwarded(calls, [
+				'sendRawTransaction',
+				'sendRawTransactionSync',
+			]);
+			for (const call of calls) {
+				expect(call.args.serializedTransaction).toBeDefined();
+			}
+		});
+
+		// The auto-populate builder is a hand-duplicated clone of the standard one,
+		// so every wrapper of it that spreads rest args into viem is checked too.
+		it('for the auto-populate writeContract and writeContractSync', async () => {
+			const {calls, spyAutoTracked} = createSpyingWalletClient();
+
+			const txHash = await spyAutoTracked.writeContract({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-not-forwarded-auto-write',
+			});
+			await spyAutoTracked.writeContractSync({
+				address: tokenAddress,
+				abi: TEST_CONTRACT_ABI,
+				functionName: 'transfer',
+				args: [RECIPIENT_ADDRESS, parseEther('1')],
+				correlation: 'op-not-forwarded-auto-write-sync',
+			});
+
+			expectNoCorrelationForwarded(calls, [
+				'writeContract',
+				'writeContractSync',
+			]);
+			// the auto-populated metadata is not forwarded either
+			for (const call of calls) {
+				expect('metadata' in call.args).toBe(false);
+				expect(typeof call.args.nonce).toBe('number');
+			}
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('for the auto-populate sendTransaction and sendTransactionSync', async () => {
+			const {calls, spyAutoTracked} = createSpyingWalletClient();
+
+			const txHash = await spyAutoTracked.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {type: 'unknown', name: 'transfer', data: []},
+				correlation: 'op-not-forwarded-auto-send',
+			});
+			await spyAutoTracked.sendTransactionSync({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {type: 'unknown', name: 'transfer', data: []},
+				correlation: 'op-not-forwarded-auto-send-sync',
+			});
+
+			expectNoCorrelationForwarded(calls, [
+				'sendTransaction',
+				'sendTransactionSync',
+			]);
+			for (const call of calls) {
+				expect(typeof call.args.nonce).toBe('number');
+			}
+
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('is independent of metadata', () => {
+		it('does not appear in metadata, and both are kept separate', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				metadata: {id: 'meaning-of-the-tx', title: 'Deposit'},
+				correlation: 'op-independent',
+			});
+
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-independent');
+			// the correlation is a sibling of metadata, never nested inside it:
+			// metadata is what consumers persist
+			expect(event.metadata).toEqual({
+				id: 'meaning-of-the-tx',
+				title: 'Deposit',
+			});
+			expect(event.metadata).not.toHaveProperty('correlation');
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+
+		it('is carried even when no metadata is supplied', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-without-metadata',
+			});
+
+			const event: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			expect(event.correlation).toBe('op-without-metadata');
+			expect(event.metadata).toBeUndefined();
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash});
+		});
+	});
+
+	describe('across concurrent sends', () => {
+		it('emits two events with the respective correlations, in order', async () => {
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			const txHash1 = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-first',
+			});
+			const txHash2 = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				correlation: 'op-second',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(2);
+			const first: TrackedTransaction<TestMetadata> = listener.mock.calls[0][0];
+			const second: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[1][0];
+			expect(first.correlation).toBe('op-first');
+			expect(second.correlation).toBe('op-second');
+			expect(first.hash).toBe(txHash1);
+			expect(second.hash).toBe(txHash2);
+
+			trackedClient.off('transaction:broadcasted', listener);
+			await publicClient.waitForTransactionReceipt({hash: txHash1});
+			await publicClient.waitForTransactionReceipt({hash: txHash2});
+		});
+
+		it('keeps the correlations apart when two sends share a nonce', async () => {
+			// The failure mode that motivates the field: a replacement and its
+			// original are two distinct operations at the SAME (from, nonce), so a
+			// map keyed on from:nonce cannot tell them apart.
+			const listener = vi.fn();
+			trackedClient.on('transaction:broadcasted', listener);
+
+			// The test node mines instantly, so a transaction can only be left
+			// pending by sending it one nonce ahead of an unfilled gap. That gap is
+			// filled at the end, which drains the pool and mines the replacement.
+			const gapNonce = await publicClient.getTransactionCount({
+				address: account.address,
+				blockTag: 'pending',
+			});
+			const nonce = gapNonce + 1;
+
+			const originalHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.01'),
+				nonce,
+				maxFeePerGas: parseEther('0.000000002'),
+				maxPriorityFeePerGas: parseEther('0.000000001'),
+				correlation: 'op-original',
+			});
+			// same nonce, higher fee: a replacement of the above
+			const replacementHash = await trackedClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.02'),
+				nonce,
+				maxFeePerGas: parseEther('0.000000200'),
+				maxPriorityFeePerGas: parseEther('0.000000100'),
+				correlation: 'op-replacement',
+			});
+
+			expect(listener).toHaveBeenCalledTimes(2);
+			const original: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[0][0];
+			const replacement: TrackedTransaction<TestMetadata> =
+				listener.mock.calls[1][0];
+
+			// identical (from, nonce): only the correlation tells them apart
+			expect(original.from).toBe(replacement.from);
+			expect(original.nonce).toBe(replacement.nonce);
+			expect(original.correlation).toBe('op-original');
+			expect(replacement.correlation).toBe('op-replacement');
+			expect(original.hash).not.toBe(replacement.hash);
+
+			trackedClient.off('transaction:broadcasted', listener);
+
+			// fill the gap so the queued replacement can be mined
+			const fillerHash = await walletClient.sendTransaction({
+				to: RECIPIENT_ADDRESS,
+				value: parseEther('0.001'),
+				nonce: gapNonce,
+			});
+			await publicClient.waitForTransactionReceipt({hash: fillerHash});
+			await publicClient.waitForTransactionReceipt({hash: replacementHash});
+			expect(replacementHash).not.toBe(originalHash);
+		});
+	});
+});

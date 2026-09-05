@@ -137,6 +137,32 @@ function resolveSource<TSource>(
 }
 
 /**
+ * The values that are carried onto a tracked transaction rather than observed:
+ * they exist only because the caller (or the client construction) supplied
+ * them, so every emission path must thread them explicitly.
+ *
+ * They travel as one object so that adding a carried field cannot silently
+ * miss a path, and so that two same-typed markers cannot be swapped by a
+ * positional-argument mistake.
+ *
+ * The tracker never inspects any of them.
+ */
+interface CarriedFields<TMetadata, TSource> {
+	/** What the application says the transaction MEANS. Persisted by consumers. */
+	metadata: TMetadata;
+	/** WHICH SIGNING ROUTE produced it. Observed at dispatch, persisted. */
+	source: TSource;
+	/**
+	 * Which CALLER-SIDE REQUEST this send answers. Ephemeral plumbing.
+	 *
+	 * Deliberately a required property of type `string | undefined` rather than
+	 * an optional one: a new call site must state that it has no correlation,
+	 * instead of getting `undefined` by forgetting the field.
+	 */
+	correlation: string | undefined;
+}
+
+/**
  * Create an UnknownTrackedTransaction for immediate emission.
  * Populates all known intended values from the transaction parameters.
  */
@@ -145,8 +171,7 @@ function createUnknownTrackedTransaction<TMetadata, TSource>(
 	from: Address,
 	nonce: number,
 	chainId: number | undefined,
-	metadata: TMetadata,
-	source: TSource,
+	carried: CarriedFields<TMetadata, TSource>,
 	broadcastTimestampMs: number,
 	params: IntendedTransactionParams,
 ): UnknownTrackedTransaction<TMetadata, TSource> {
@@ -157,8 +182,7 @@ function createUnknownTrackedTransaction<TMetadata, TSource>(
 		from,
 		nonce,
 		broadcastTimestampMs,
-		metadata,
-		source,
+		...carried,
 		to: params.to,
 		value: params.value,
 		data: params.data,
@@ -278,13 +302,12 @@ function extractTransactionTypeFields(tx: Transaction):
  * Create a KnownTrackedTransaction from a fetched transaction.
  *
  * Note: this object is rebuilt from the chain fetch, not copied from the
- * broadcasted one, so every carried-but-not-observed field (metadata, source)
- * must be threaded in explicitly.
+ * broadcasted one, so every carried-but-not-observed field (metadata, source,
+ * correlation) must be threaded in explicitly.
  */
 function createKnownTrackedTransaction<TMetadata, TSource>(
 	tx: Transaction,
-	metadata: TMetadata,
-	source: TSource,
+	carried: CarriedFields<TMetadata, TSource>,
 	broadcastTimestampMs: number,
 ): KnownTrackedTransaction<TMetadata, TSource> {
 	const base = {
@@ -296,8 +319,7 @@ function createKnownTrackedTransaction<TMetadata, TSource>(
 		value: tx.value,
 		data: tx.input,
 		broadcastTimestampMs,
-		metadata,
-		source,
+		...carried,
 	};
 
 	const typeFields = extractTransactionTypeFields(tx);
@@ -315,8 +337,7 @@ function createKnownTrackedTransactionFromRaw<TMetadata, TSource>(
 	parsedTx: ParseTransactionReturnType<`0x${string}`>,
 	from: `0x${string}`,
 	hash: Hash,
-	metadata: TMetadata,
-	source: TSource,
+	carried: CarriedFields<TMetadata, TSource>,
 	chainId: number | undefined,
 	broadcastTimestampMs: number,
 ): KnownTrackedTransaction<TMetadata, TSource> {
@@ -329,8 +350,7 @@ function createKnownTrackedTransactionFromRaw<TMetadata, TSource>(
 		value: parsedTx.value ?? 0n,
 		data: parsedTx.data ?? '0x',
 		broadcastTimestampMs,
-		metadata,
-		source,
+		...carried,
 	};
 
 	// Determine transaction type from parsed tx
@@ -690,16 +710,14 @@ export function createTrackedWalletClient<
 			 */
 			async function fetchAndEmitFullData(
 				hash: Hash,
-				metadata: TMetadata,
-				source: TSource,
+				carried: CarriedFields<TMetadata, TSource>,
 				broadcastTimestampMs: number,
 			): Promise<void> {
 				try {
 					const tx = await publicClient.getTransaction({hash});
 					const knownTx = createKnownTrackedTransaction(
 						tx,
-						metadata,
-						source,
+						carried,
 						broadcastTimestampMs,
 					);
 					emitter.emit('transaction:fetched', knownTx);
@@ -721,16 +739,40 @@ export function createTrackedWalletClient<
 				account?: Account | Address;
 				nonce?: NonceOption;
 				metadata: TMetadata;
-				restArgs: T;
+				correlation: string | undefined;
+				/**
+				 * The caller's remaining args, spread verbatim into viem's own call.
+				 *
+				 * `{correlation?: never}` is the compile-time half of the no-forwarding
+				 * rule: a wrapper that forgets to destructure `correlation` out fails
+				 * here instead of handing the wallet an unrecognised parameter. Nothing
+				 * downstream would catch it, since the viem call is behind an `as any`.
+				 */
+				restArgs: T & {correlation?: never};
 				intendedParams: IntendedTransactionParams;
 				execute: (argsWithNonce: T & {nonce: number}) => Promise<R>;
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
-				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
+				const {
+					metadata,
+					correlation,
+					restArgs,
+					intendedParams,
+					execute,
+					extractHash,
+				} = args;
 				const broadcastTimestampMs = clock();
 				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
 				// A thunk is re-evaluated on every send, never captured once.
 				const source = resolveSource(sourceOption);
+				// The carried values travel as one bundle from here on: metadata (what
+				// the tx means), source (which route signed) and correlation (which
+				// caller-side request this send answers). None is interpreted.
+				const carried: CarriedFields<TMetadata, TSource> = {
+					metadata,
+					source,
+					correlation,
+				};
 
 				// Extract common context
 				const {from, intendedNonce} = await extractTransactionContext(args);
@@ -750,15 +792,14 @@ export function createTrackedWalletClient<
 					from,
 					intendedNonce,
 					walletClient.chain?.id,
-					metadata,
-					source,
+					carried,
 					broadcastTimestampMs,
 					intendedParams,
 				);
 				emitter.emit('transaction:broadcasted', unknownTx);
 
 				// Fire-and-forget: fetch full data and emit transaction:fetched
-				fetchAndEmitFullData(hash, metadata, source, broadcastTimestampMs);
+				fetchAndEmitFullData(hash, carried, broadcastTimestampMs);
 
 				return result;
 			}
@@ -771,14 +812,26 @@ export function createTrackedWalletClient<
 			async function executeTrackedRawTransaction<R>(args: {
 				serializedTransaction: TransactionSerialized;
 				metadata: TMetadata;
+				correlation: string | undefined;
 				execute: () => Promise<R>;
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
-				const {serializedTransaction, metadata, execute, extractHash} = args;
+				const {
+					serializedTransaction,
+					metadata,
+					correlation,
+					execute,
+					extractHash,
+				} = args;
 				const broadcastTimestampMs = clock();
 				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
 				// A thunk is re-evaluated on every send, never captured once.
 				const source = resolveSource(sourceOption);
+				const carried: CarriedFields<TMetadata, TSource> = {
+					metadata,
+					source,
+					correlation,
+				};
 
 				const from = await recoverTransactionAddress({serializedTransaction});
 
@@ -793,8 +846,7 @@ export function createTrackedWalletClient<
 					parsedTx,
 					from,
 					hash,
-					metadata,
-					source,
+					carried,
 					walletClient.chain?.id,
 					broadcastTimestampMs,
 				);
@@ -843,13 +895,14 @@ export function createTrackedWalletClient<
 						TChainOverride
 					>,
 				): Promise<Hash> {
-					const {metadata, nonce, ...writeArgs} = args;
+					const {metadata, correlation, nonce, ...writeArgs} = args;
 					const intendedParams = extractIntendedParamsFromWriteContract(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						correlation,
 						restArgs: writeArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -868,13 +921,14 @@ export function createTrackedWalletClient<
 						TChainOverride
 					>,
 				): Promise<Hash> {
-					const {metadata, nonce, ...sendArgs} = args;
+					const {metadata, correlation, nonce, ...sendArgs} = args;
 					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						correlation,
 						restArgs: sendArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -886,11 +940,12 @@ export function createTrackedWalletClient<
 				async sendRawTransaction(
 					args: TrackedRawTransactionParameters<TMetadata>,
 				): Promise<Hash> {
-					const {metadata, serializedTransaction} = args;
+					const {metadata, correlation, serializedTransaction} = args;
 
 					return executeTrackedRawTransaction({
 						serializedTransaction,
 						metadata: metadata as TMetadata,
+						correlation,
 						execute: () =>
 							walletClient.sendRawTransaction({serializedTransaction}),
 						extractHash: (hash) => hash,
@@ -924,13 +979,14 @@ export function createTrackedWalletClient<
 						TChainOverride
 					>,
 				): Promise<TransactionReceipt> {
-					const {metadata, nonce, ...writeArgs} = args;
+					const {metadata, correlation, nonce, ...writeArgs} = args;
 					const intendedParams = extractIntendedParamsFromWriteContract(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						correlation,
 						restArgs: writeArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -949,13 +1005,14 @@ export function createTrackedWalletClient<
 						TChainOverride
 					>,
 				): Promise<TransactionReceipt> {
-					const {metadata, nonce, ...sendArgs} = args;
+					const {metadata, correlation, nonce, ...sendArgs} = args;
 					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						correlation,
 						restArgs: sendArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -967,11 +1024,12 @@ export function createTrackedWalletClient<
 				async sendRawTransactionSync(
 					args: TrackedRawTransactionParameters<TMetadata>,
 				): Promise<TransactionReceipt> {
-					const {metadata, serializedTransaction} = args;
+					const {metadata, correlation, serializedTransaction} = args;
 
 					return executeTrackedRawTransaction({
 						serializedTransaction,
 						metadata: metadata as TMetadata,
+						correlation,
 						execute: () =>
 							walletClient.sendRawTransactionSync({serializedTransaction}),
 						extractHash: (receipt) => receipt.transactionHash,
@@ -1063,16 +1121,14 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 			 */
 			async function fetchAndEmitFullData(
 				hash: Hash,
-				metadata: TMetadata,
-				source: TSource,
+				carried: CarriedFields<TMetadata, TSource>,
 				broadcastTimestampMs: number,
 			): Promise<void> {
 				try {
 					const tx = await publicClient.getTransaction({hash});
 					const knownTx = createKnownTrackedTransaction(
 						tx,
-						metadata,
-						source,
+						carried,
 						broadcastTimestampMs,
 					);
 					emitter.emit('transaction:fetched', knownTx);
@@ -1123,16 +1179,40 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 				account?: Account | Address;
 				nonce?: NonceOption;
 				metadata: TMetadata;
-				restArgs: T;
+				correlation: string | undefined;
+				/**
+				 * The caller's remaining args, spread verbatim into viem's own call.
+				 *
+				 * `{correlation?: never}` is the compile-time half of the no-forwarding
+				 * rule: a wrapper that forgets to destructure `correlation` out fails
+				 * here instead of handing the wallet an unrecognised parameter. Nothing
+				 * downstream would catch it, since the viem call is behind an `as any`.
+				 */
+				restArgs: T & {correlation?: never};
 				intendedParams: IntendedTransactionParams;
 				execute: (argsWithNonce: T & {nonce: number}) => Promise<R>;
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
-				const {metadata, restArgs, intendedParams, execute, extractHash} = args;
+				const {
+					metadata,
+					correlation,
+					restArgs,
+					intendedParams,
+					execute,
+					extractHash,
+				} = args;
 				const broadcastTimestampMs = clock();
 				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
 				// A thunk is re-evaluated on every send, never captured once.
 				const source = resolveSource(sourceOption);
+				// The carried values travel as one bundle from here on: metadata (what
+				// the tx means), source (which route signed) and correlation (which
+				// caller-side request this send answers). None is interpreted.
+				const carried: CarriedFields<TMetadata, TSource> = {
+					metadata,
+					source,
+					correlation,
+				};
 
 				const {from, intendedNonce} = await extractTransactionContext(args);
 
@@ -1150,15 +1230,14 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 					from,
 					intendedNonce,
 					walletClient.chain?.id,
-					metadata,
-					source,
+					carried,
 					broadcastTimestampMs,
 					intendedParams,
 				);
 				emitter.emit('transaction:broadcasted', unknownTx);
 
 				// Fire-and-forget: fetch full data and emit transaction:fetched
-				fetchAndEmitFullData(hash, metadata, source, broadcastTimestampMs);
+				fetchAndEmitFullData(hash, carried, broadcastTimestampMs);
 
 				return result;
 			}
@@ -1171,14 +1250,26 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 			async function executeTrackedRawTransaction<R>(args: {
 				serializedTransaction: TransactionSerialized;
 				metadata: TMetadata;
+				correlation: string | undefined;
 				execute: () => Promise<R>;
 				extractHash: (result: R) => Hash;
 			}): Promise<R> {
-				const {serializedTransaction, metadata, execute, extractHash} = args;
+				const {
+					serializedTransaction,
+					metadata,
+					correlation,
+					execute,
+					extractHash,
+				} = args;
 				const broadcastTimestampMs = clock();
 				// Stamped here, in the same step as from/nonce/broadcastTimestampMs.
 				// A thunk is re-evaluated on every send, never captured once.
 				const source = resolveSource(sourceOption);
+				const carried: CarriedFields<TMetadata, TSource> = {
+					metadata,
+					source,
+					correlation,
+				};
 
 				const from = await recoverTransactionAddress({serializedTransaction});
 				const parsedTx = parseTransaction(serializedTransaction);
@@ -1192,8 +1283,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 					parsedTx,
 					from,
 					hash,
-					metadata,
-					source,
+					carried,
 					walletClient.chain?.id,
 					broadcastTimestampMs,
 				);
@@ -1241,7 +1331,12 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						TChainOverride
 					>,
 				): Promise<Hash> {
-					const {metadata: userMetadata, nonce, ...writeArgs} = args;
+					const {
+						metadata: userMetadata,
+						correlation,
+						nonce,
+						...writeArgs
+					} = args;
 
 					// Validate that user didn't provide operation, functionName or args
 					validateNoAutoPopulatedFieldsInMetadata(userMetadata);
@@ -1260,6 +1355,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: finalMetadata,
+						correlation,
 						restArgs: writeArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -1278,13 +1374,14 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						TChainOverride
 					>,
 				): Promise<Hash> {
-					const {metadata, nonce, ...sendArgs} = args;
+					const {metadata, correlation, nonce, ...sendArgs} = args;
 					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						correlation,
 						restArgs: sendArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -1296,11 +1393,12 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 				async sendRawTransaction(
 					args: TrackedRawTransactionParameters<TMetadata>,
 				): Promise<Hash> {
-					const {metadata, serializedTransaction} = args;
+					const {metadata, correlation, serializedTransaction} = args;
 
 					return executeTrackedRawTransaction({
 						serializedTransaction,
 						metadata: metadata as TMetadata,
+						correlation,
 						execute: () =>
 							walletClient.sendRawTransaction({serializedTransaction}),
 						extractHash: (hash) => hash,
@@ -1334,7 +1432,12 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						TChainOverride
 					>,
 				): Promise<TransactionReceipt> {
-					const {metadata: userMetadata, nonce, ...writeArgs} = args;
+					const {
+						metadata: userMetadata,
+						correlation,
+						nonce,
+						...writeArgs
+					} = args;
 
 					// Validate that user didn't provide operation, functionName or args
 					validateNoAutoPopulatedFieldsInMetadata(userMetadata);
@@ -1353,6 +1456,7 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: finalMetadata,
+						correlation,
 						restArgs: writeArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -1371,13 +1475,14 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 						TChainOverride
 					>,
 				): Promise<TransactionReceipt> {
-					const {metadata, nonce, ...sendArgs} = args;
+					const {metadata, correlation, nonce, ...sendArgs} = args;
 					const intendedParams = extractIntendedParamsFromSendTransaction(args);
 
 					return executeTrackedTransaction({
 						account: normalizeAccount(args.account),
 						nonce,
 						metadata: metadata as TMetadata,
+						correlation,
 						restArgs: sendArgs,
 						intendedParams,
 						execute: (argsWithNonce) =>
@@ -1389,11 +1494,12 @@ function createAutoPopulateBuilder<TMetadata, TSource>(
 				async sendRawTransactionSync(
 					args: TrackedRawTransactionParameters<TMetadata>,
 				): Promise<TransactionReceipt> {
-					const {metadata, serializedTransaction} = args;
+					const {metadata, correlation, serializedTransaction} = args;
 
 					return executeTrackedRawTransaction({
 						serializedTransaction,
 						metadata: metadata as TMetadata,
+						correlation,
 						execute: () =>
 							walletClient.sendRawTransactionSync({serializedTransaction}),
 						extractHash: (receipt) => receipt.transactionHash,

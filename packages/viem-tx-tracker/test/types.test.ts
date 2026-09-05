@@ -119,10 +119,69 @@ function typeLevelAssertions() {
 	// @ts-expect-error - same in auto-populate mode: no silent PopulatedMetadata -> unknown
 	createTrackedWalletClient({populateMetadata: true, source: 'local-signer'});
 
+	// --- correlation: optional per call, opaque, always a string -------------
+	untyped.on('transaction:broadcasted', (tx) => {
+		const correlation: string | undefined = tx.correlation;
+		return correlation;
+	});
+	untyped.on('transaction:fetched', (tx) => {
+		// threaded to the fetched path too, so the type is not a lie at runtime
+		const correlation: string | undefined = tx.correlation;
+		return correlation;
+	});
+
+	// accepted on every tracked send, alongside metadata and nonce
+	const serializedTransaction = '0x02abcdef' as const;
+	untyped.sendTransaction({to: '0x', correlation: 'op-1'});
+	untyped.sendTransactionSync({to: '0x', correlation: 'op-1'});
+	untyped.sendRawTransaction({
+		serializedTransaction,
+		correlation: 'op-1',
+	});
+	untyped.sendRawTransactionSync({
+		serializedTransaction,
+		correlation: 'op-1',
+	});
+	untyped.writeContract({
+		address: '0x',
+		abi: [],
+		functionName: 'transfer',
+		metadata: {id: 'x'},
+		correlation: 'op-1',
+	});
+	untyped.writeContractSync({
+		address: '0x',
+		abi: [],
+		functionName: 'transfer',
+		correlation: 'op-1',
+	});
+	autoPopulate.writeContract({
+		address: '0x',
+		abi: [],
+		functionName: 'transfer',
+		correlation: 'op-1',
+	});
+	autoPopulate.writeContractSync({
+		address: '0x',
+		abi: [],
+		functionName: 'transfer',
+		correlation: 'op-1',
+	});
+
+	// it is optional: omitting it is not an error
+	untyped.sendTransaction({to: '0x'});
+
+	// @ts-expect-error - the correlation is a string, not a structured payload:
+	// it is routing plumbing the tracker will never interpret
+	untyped.sendTransaction({to: '0x', correlation: {operationId: 'op-1'}});
+
+	// @ts-expect-error - and not a number either
+	untyped.sendRawTransaction({serializedTransaction, correlation: 1});
+
 	return [stillAssignable, stillAssignableAlias, sourcedAlias];
 }
 
-describe('source type-level contract', () => {
+describe('source and correlation type-level contract', () => {
 	it('is enforced by tsc (see pnpm typecheck)', () => {
 		expect(typeof typeLevelAssertions).toBe('function');
 	});

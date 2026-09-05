@@ -11,10 +11,11 @@ This package wraps a `WalletClient` with the same method names (`sendTransaction
 - the facts observed at dispatch: `hash`, `from`, `nonce`, `to`, `value`, `data`, `broadcastTimestampMs`, the intended gas parameters and inferred transaction type
 - `metadata`: whatever your application says the transaction means, in your own type
 - `source`: an opaque marker of which signing route produced it, in your own type
+- `correlation`: an opaque marker of which caller-side request a send answers, supplied per call
 
 It also resolves the nonce for you (`pending` by default) and, once broadcast, fetches the transaction back from the chain and emits a second event with the values the chain actually recorded.
 
-The tracker never interprets `metadata` or `source`. It carries them.
+The tracker never interprets `metadata`, `source` or `correlation`. It carries them.
 
 ## Installation
 
@@ -128,6 +129,42 @@ Points worth knowing:
 - It defaults to `undefined`, in which case `source` is simply `undefined` on every transaction.
 - The tracker never inspects it. There is no wallet, EIP-6963 or connection-library knowledge in this package: the union is yours.
 
+## Correlation: which request this send answers
+
+A send is asynchronous in a way that matters: `transaction:broadcasted` fires after the wallet round trip, which includes a popup the user may read for a while, during which the page stays interactive and can issue further sends. So the handler has to work out which of its own in-flight requests the event belongs to.
+
+`(from, nonce)` cannot answer that. Replacing or cancelling a stuck transaction deliberately creates a second operation at the *same* nonce, so two concurrent replacements collide and the handler silently attaches a broadcast to the wrong one.
+
+Pass a `correlation` on the call and read it off the event:
+
+```typescript
+const correlation = crypto.randomUUID();
+
+tracked.on('transaction:broadcasted', (tx) => {
+  // route this broadcast to the request that issued it, not to a (from, nonce) guess
+  if (tx.correlation) pendingRequests.get(tx.correlation)?.resolve(tx);
+});
+
+await tracked.sendTransaction({to, value, metadata: {id: 'deposit-1'}, correlation});
+```
+
+It is a sibling of `metadata` and `nonce` on every tracked send, never nested inside metadata. Three fields are now carried on a tracked transaction and they answer three different questions:
+
+| Field | Question it answers | Supplied | Lifetime |
+|-------|---------------------|----------|----------|
+| `metadata` | What the application says the transaction **means** | Per call, in your own type | Persisted by consumers |
+| `source` | **Which signing route** produced it, a fact observed at dispatch | Once, at client construction, in your own type | Persisted by consumers |
+| `correlation` | Which **caller-side request** this send answers | Per call, as a `string` | Ephemeral plumbing, not persisted |
+
+Points worth knowing:
+
+- It is **not intended to be persisted**. That is the whole reason it is not part of `metadata`: metadata is what consumers store, so plumbing written there ends up in every stored record forever.
+- It is **not an identity** for the transaction. `hash` is that.
+- It is **meaningless outside the session that issued the send**. A value rehydrated from storage carries no information, because the requests it referred to are gone.
+- It is typed `correlation?: string`, deliberately, rather than a generic type parameter: identity is all a consumer needs to route an event, and the value is not `unknown`, which would invite smuggling structured data into a field the tracker will never interpret.
+- The tracker never inspects, interprets, validates or defaults it, exactly as with `source`. It is also removed from the arguments before they reach viem, so the wallet never sees an unrecognised field.
+- It is optional everywhere. Omit it and `correlation` is simply `undefined` on the emitted transaction.
+
 ## Nonces
 
 Every method takes `nonce` as either an exact number or a block tag:
@@ -178,6 +215,7 @@ type CommonFields = {
   readonly broadcastTimestampMs: number;
   readonly metadata: TMetadata;
   readonly source: TSource;
+  readonly correlation?: string;
 };
 ```
 
@@ -194,7 +232,7 @@ if (tx.txType === 'eip1559') {
 
 For a broadcast transaction (`known: false`) the type is inferred from what you provided: `maxFeePerGas` gives `eip1559`, `gasPrice` with an `accessList` gives `eip2930`, `gasPrice` alone gives `legacy`, and nothing gives `txType: undefined`, meaning the wallet will decide. On a fetched transaction (`known: true`) the type and its gas values are the ones the chain recorded, and every gas field is present.
 
-`from` and `nonce` are re-read from the chain on `transaction:fetched`. `metadata` and `source` are not observable on chain, so they are carried through from dispatch unchanged.
+`from` and `nonce` are re-read from the chain on `transaction:fetched`. `metadata`, `source` and `correlation` are not observable on chain, so they are carried through from dispatch unchanged, on every event that carries a transaction.
 
 ## API
 
@@ -214,20 +252,20 @@ Returns a builder with a single method, `.using(walletClient, publicClient)`.
 |--------|---------|
 | `writeContract(args)` | `Promise<Hash>` |
 | `sendTransaction(args)` | `Promise<Hash>` |
-| `sendRawTransaction({serializedTransaction, metadata})` | `Promise<Hash>` |
+| `sendRawTransaction({serializedTransaction, metadata, correlation})` | `Promise<Hash>` |
 | `writeContractSync(args)` | `Promise<TransactionReceipt>` |
 | `sendTransactionSync(args)` | `Promise<TransactionReceipt>` |
-| `sendRawTransactionSync({serializedTransaction, metadata})` | `Promise<TransactionReceipt>` |
+| `sendRawTransactionSync({serializedTransaction, metadata, correlation})` | `Promise<TransactionReceipt>` |
 | `on(event, listener)` | `() => void` (unsubscribe) |
 | `off(event, listener)` | `void` |
 
-The arguments are viem's, with `nonce` widened to accept a block tag and a `metadata` field added. The underlying clients stay reachable as `tracked.walletClient` and `tracked.publicClient`.
+The arguments are viem's, with `nonce` widened to accept a block tag and two fields added: `metadata` and the optional `correlation`. Both are stripped from the arguments before they are handed to viem. The underlying clients stay reachable as `tracked.walletClient` and `tracked.publicClient`.
 
 The account comes from the call (`account`) or from the wallet client. If neither has one, the call throws.
 
 ### Types
 
-`TrackedTransaction`, `KnownTrackedTransaction`, `UnknownTrackedTransaction`, `TrackedWalletClient`, `TrackedWalletClientAutoPopulate`, `TrackedWalletClientEvents`, `PopulatedMetadata`, `FunctionCallMetadata`, `UnknownTypeMetadata`, `NonceOption`, `BlockTag`, `AccessList`, `IntendedGasParameters`, `CreateTrackedWalletClientOptions`.
+`TrackedTransaction`, `KnownTrackedTransaction`, `UnknownTrackedTransaction`, `TrackedWalletClient`, `TrackedWalletClientAutoPopulate`, `TrackedWalletClientEvents`, `PopulatedMetadata`, `FunctionCallMetadata`, `UnknownTypeMetadata`, `NonceOption`, `BlockTag`, `AccessList`, `IntendedGasParameters`, `CreateTrackedWalletClientOptions`, `CorrelationField`.
 
 `TrackedWalletClientType` is a convenience for declaring a client variable without spelling out the whole interface:
 

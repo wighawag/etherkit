@@ -109,6 +109,46 @@ export type MetadataField<TMetadata> = undefined extends TMetadata
 	: {metadata: TMetadata};
 
 /**
+ * The optional, opaque, per-call correlation marker.
+ *
+ * It answers "which caller-side request does this send answer?", so the code
+ * that receives `transaction:broadcasted` can match the event to the in-flight
+ * send it issued, without an out-of-band map keyed on something like
+ * `from:nonce` (which is not unique: cancelling a stuck transaction creates a
+ * second operation at the same nonce by design).
+ *
+ * Three fields are carried on a tracked transaction and they answer three
+ * different questions:
+ *
+ * | field         | question                                     | lifetime            |
+ * | ------------- | -------------------------------------------- | ------------------- |
+ * | `metadata`    | what the application says the tx MEANS        | persisted           |
+ * | `source`      | WHICH SIGNING ROUTE produced it               | persisted           |
+ * | `correlation` | which CALLER-SIDE REQUEST this send answers   | ephemeral plumbing  |
+ *
+ * `correlation` is deliberately NOT any of the following:
+ *
+ * - It is not intended to be persisted. It is routing plumbing for the session
+ *   that issued the send, not a property of the transaction.
+ * - It is not an identity for the transaction. `hash` is that.
+ * - It is meaningless outside the session that issued the send, so a value
+ *   rehydrated from storage carries no information.
+ *
+ * The tracker never inspects, interprets, validates or defaults it, exactly as
+ * with `source`. It is a sibling of `metadata`, never nested inside it,
+ * precisely because metadata is what gets persisted.
+ */
+export type CorrelationField = {
+	/**
+	 * Opaque per-call marker tying this send back to the caller-side request
+	 * that issued it. Carried verbatim onto the emitted transaction. Ephemeral:
+	 * not intended to be persisted, not an identity, meaningless outside the
+	 * issuing session. See {@link CorrelationField}.
+	 */
+	correlation?: string;
+};
+
+/**
  * Access list type used in EIP-2930 and EIP-1559 transactions.
  */
 export type AccessList = readonly {
@@ -145,6 +185,27 @@ type CommonTrackedFields<TMetadata, TSource = undefined> = {
 	 * the application said the transaction means.
 	 */
 	readonly source: TSource;
+	/**
+	 * Opaque marker of which caller-side request this send answers, supplied per
+	 * call and carried verbatim: the tracker never inspects or interprets it.
+	 * Carried on every emitted transaction, so it is on `transaction:fetched`
+	 * wherever that event is emitted, not only on `transaction:broadcasted`.
+	 *
+	 * Ephemeral plumbing, unlike its two siblings: `metadata` is what the
+	 * application says the transaction MEANS and `source` is WHICH SIGNING ROUTE
+	 * produced it, both of which consumers persist. `correlation` is not
+	 * intended to be persisted, is not an identity for the transaction, and is
+	 * meaningless outside the session that issued the send.
+	 * See {@link CorrelationField} for the full three-way distinction.
+	 *
+	 * Optional here, unlike the required `source` above, and deliberately so.
+	 * The property is in fact always present at runtime, so `string | undefined`
+	 * would be the more faithful type, but making it required would stop every
+	 * consumer-authored tracked-transaction literal (mocks, fixtures, values
+	 * rehydrated from storage) from compiling, turning an additive change into a
+	 * breaking one. Do not "tidy" this into a required property.
+	 */
+	readonly correlation?: string;
 	readonly to: `0x${string}` | null;
 	readonly value: bigint;
 	readonly data: `0x${string}`;
@@ -303,7 +364,8 @@ export type TrackedWriteContractParameters<
 	 * - undefined: fetch nonce using 'pending' (default)
 	 */
 	nonce?: NonceOption;
-} & MetadataField<TMetadata>;
+} & MetadataField<TMetadata> &
+	CorrelationField;
 
 /**
  * The fields that are auto-populated by writeContract.
@@ -395,7 +457,8 @@ export type TrackedWriteContractAutoPopulateParameters<
 	 * - undefined: fetch nonce using 'pending' (default)
 	 */
 	nonce?: NonceOption;
-} & WriteContractAutoPopulateMetadataField<TMetadata>;
+} & WriteContractAutoPopulateMetadataField<TMetadata> &
+	CorrelationField;
 
 /**
  * Extended SendTransactionParameters with metadata and flexible nonce.
@@ -417,7 +480,8 @@ export type TrackedSendTransactionParameters<
 	 * - undefined: fetch nonce using 'pending' (default)
 	 */
 	nonce?: NonceOption;
-} & MetadataField<TMetadata>;
+} & MetadataField<TMetadata> &
+	CorrelationField;
 
 /**
  * Parameters for sendRawTransaction with metadata.
@@ -429,7 +493,8 @@ export type TrackedRawTransactionParameters<TMetadata> = {
 	 * The RLP-encoded signed transaction.
 	 */
 	serializedTransaction: TransactionSerialized;
-} & MetadataField<TMetadata>;
+} & MetadataField<TMetadata> &
+	CorrelationField;
 
 /**
  * A wallet client wrapper that tracks transactions with metadata.
