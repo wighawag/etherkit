@@ -11,6 +11,7 @@ export {
 	type CreateBurnerWalletProviderOptions,
 	type BurnerWalletProviderResult,
 } from './types.js';
+export {ACCOUNT_DERIVATION_PATH} from './derivation.js';
 export {BURNER_WALLET_SVG, BURNER_WALLET_ICON_DATA_URI} from './icon.js';
 export {announceBurnerWallet} from './announcer.js';
 export type {

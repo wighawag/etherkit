@@ -16,6 +16,7 @@ import {
 	ProviderOptions,
 } from 'eip-1193-accounts-wrapper';
 import {english} from 'viem/accounts';
+import {derivePrivateKeys} from './derivation.js';
 import {
 	ACCOUNT_COUNT,
 	type Hex,
@@ -123,7 +124,18 @@ export function createBurnerWalletProvider(
 	}
 
 	// ==================== Inner Provider ====================
-	function buildInner(): EIP1193ProviderWithoutEvents {
+	/**
+	 * Build the signing provider for a given mnemonic, `null` meaning "no wallet
+	 * yet".
+	 *
+	 * TAKES THE MNEMONIC RATHER THAN READING IT, so that deriving (which is also
+	 * how a mnemonic is validated) happens BEFORE any state is committed. The
+	 * alternative - assign, then build, then save - leaves a rejected mnemonic in
+	 * `walletManager.get()` while storage and signing still use the old one.
+	 */
+	function buildInner(
+		forMnemonic: string | null,
+	): EIP1193ProviderWithoutEvents {
 		// `createCurriedJSONRPC` takes `string | RequestRPC<Methods>`: a URL it
 		// fetches, or an object it calls `.request({method, params})` on. Our node
 		// type states only the `.request` that is actually used, which is why the
@@ -136,10 +148,12 @@ export function createBurnerWalletProvider(
 
 		const providerOptions: ProviderOptions = {};
 
-		if (mnemonic) {
+		if (forMnemonic) {
+			// Private keys derived HERE rather than handing the wrapper the
+			// mnemonic, because the wrapper walks BIP-44's account level and this
+			// wallet must agree with the node it points at. See `derivation.ts`.
 			providerOptions.accounts = {
-				mnemonic,
-				numAccounts: accountCount,
+				privateKeys: derivePrivateKeys(forMnemonic, accountCount),
 			};
 		}
 
@@ -165,7 +179,7 @@ export function createBurnerWalletProvider(
 		);
 	}
 
-	let inner = buildInner();
+	let inner = buildInner(mnemonic);
 
 	// ==================== Address Ordering ====================
 	/**
@@ -191,19 +205,26 @@ export function createBurnerWalletProvider(
 	// ==================== WalletManager ====================
 	const walletManager: BurnerWalletManager = {
 		createNew(): string {
-			mnemonic = generateMnemonic(english);
+			const newMnemonic = generateMnemonic(english);
+			inner = buildInner(newMnemonic);
+			mnemonic = newMnemonic;
 			selectedAddress = null; // Reset selection, first account will be used
 			save();
-			inner = buildInner();
 			emitAccountsChanged();
 			return mnemonic;
 		},
 
 		importMnemonic(newMnemonic: string): void {
-			// Validate by building provider (will throw if invalid)
+			// BUILD FIRST, COMMIT SECOND. Building derives the accounts, which is
+			// what rejects an invalid mnemonic, so a throw here must leave the
+			// wallet exactly as it was: same accounts signing, same mnemonic in
+			// storage, same thing reported by `get()`. Assigning first made a
+			// rejected mnemonic the one `get()` reported while the previous one
+			// kept signing, and the two only agreed again after a reload.
+			const nextInner = buildInner(newMnemonic);
+			inner = nextInner;
 			mnemonic = newMnemonic;
 			selectedAddress = null; // Reset selection
-			inner = buildInner(); // This validates the mnemonic
 			save();
 			emitAccountsChanged();
 		},
@@ -219,7 +240,7 @@ export function createBurnerWalletProvider(
 			mnemonic = null;
 			selectedAddress = null;
 			save();
-			inner = buildInner();
+			inner = buildInner(null);
 			emitAccountsChanged();
 		},
 
@@ -274,7 +295,7 @@ export function createBurnerWalletProvider(
 	// ==================== Initialize ====================
 	load();
 	if (mnemonic) {
-		inner = buildInner();
+		inner = buildInner(mnemonic);
 	}
 
 	// Emit connect event asynchronously

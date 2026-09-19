@@ -320,6 +320,89 @@ describe('walletManager', () => {
 			walletManager.importMnemonic(mnemonic);
 			expect(walletManager.get().selectedAddress).toBeNull();
 		});
+
+		/**
+		 * A REJECTED IMPORT MUST CHANGE NOTHING.
+		 *
+		 * The accounts are derived (which is what rejects the mnemonic) before
+		 * any state is committed. When that was the other way round, a rejected
+		 * mnemonic became the one `get()` reported while the previous one kept
+		 * signing and stayed in storage: a settings screen showed the typo as
+		 * the current wallet, and the two only agreed again after a reload.
+		 */
+		describe('when the mnemonic is invalid', () => {
+			const GOOD =
+				'test test test test test test test test test test test junk';
+
+			it('throws', () => {
+				const {walletManager} = createBurnerWalletProvider({
+					nodeURL: 'http://localhost:8545',
+				});
+				expect(() => walletManager.importMnemonic('garbage')).toThrow();
+			});
+
+			it('leaves get() reporting the wallet that is actually signing', async () => {
+				const {provider, walletManager} = createBurnerWalletProvider({
+					nodeURL: 'http://localhost:8545',
+				});
+				walletManager.importMnemonic(GOOD);
+				const before = (await provider.request({
+					method: 'eth_accounts',
+				})) as string[];
+
+				expect(() => walletManager.importMnemonic('garbage')).toThrow();
+
+				expect(walletManager.get().mnemonic).toBe(GOOD);
+				expect(await provider.request({method: 'eth_accounts'})).toEqual(
+					before,
+				);
+			});
+
+			it('leaves localStorage untouched', () => {
+				const {walletManager} = createBurnerWalletProvider({
+					nodeURL: 'http://localhost:8545',
+				});
+				walletManager.importMnemonic(GOOD);
+
+				expect(() => walletManager.importMnemonic('garbage')).toThrow();
+
+				expect(store['burner-wallet:mnemonic']).toBe(GOOD);
+			});
+
+			it('keeps the selection it had', async () => {
+				const {provider, walletManager} = createBurnerWalletProvider({
+					nodeURL: 'http://localhost:8545',
+				});
+				walletManager.importMnemonic(GOOD);
+				const accounts = (await provider.request({
+					method: 'eth_accounts',
+				})) as string[];
+				walletManager.selectAccount(accounts[3] as Hex);
+
+				expect(() => walletManager.importMnemonic('garbage')).toThrow();
+
+				expect(walletManager.get().selectedAddress).toBe(accounts[3]);
+			});
+
+			it('does not announce a change that did not happen', async () => {
+				const {provider, walletManager} = createBurnerWalletProvider({
+					nodeURL: 'http://localhost:8545',
+				});
+				const listener = vi.fn();
+				provider.on('accountsChanged', listener);
+
+				// `accountsChanged` is emitted asynchronously, so let the SUCCESSFUL
+				// import's event land before watching for one that must not happen.
+				walletManager.importMnemonic(GOOD);
+				await vi.waitFor(() => expect(listener).toHaveBeenCalled());
+				listener.mockClear();
+
+				expect(() => walletManager.importMnemonic('garbage')).toThrow();
+				await new Promise((resolve) => setTimeout(resolve, 10));
+
+				expect(listener).not.toHaveBeenCalled();
+			});
+		});
 	});
 
 	describe('selectAccount', () => {
