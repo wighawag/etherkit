@@ -1,5 +1,31 @@
 # @etherkit/burner-wallet
 
+## 0.1.0
+
+### Minor Changes
+
+- 0592846: **Breaking:** derive accounts at `m/44'/60'/0'/0/{index}`, the path every node uses.
+
+  Accounts were derived at `m/44'/60'/{index}'/0/0`, walking BIP-44's _account_ level rather than its _address_ level, because that is what `eip-1193-accounts-wrapper` does with `numAccounts`. `anvil`, `hardhat node` and MetaMask all enumerate the address level, and BIP-44 agrees with them: the account level separates identities that should not be linked, the address level enumerates one identity's addresses. Ten accounts of one burner are the second thing.
+
+  Account 0 is identical under both paths, which is exactly why this survived: with the standard test mnemonic the wallet reported `0xf39F...2266` and looked precisely like the node it was pointed at, and only diverged from account 1 onwards, where it reported `0x8C8d...d650` instead of the well-known `0x7099...79C8`. A developer funding "the second account" from the node's startup banner funded an address the wallet would never report.
+
+  `eth_accounts` is now byte-for-byte what `anvil --mnemonic "test test ... junk"` prints, verified against a running node, and the derived private keys are the ones it publishes. Derivation moved into this package (`src/derivation.ts`) rather than being delegated, because the path is a promise made to whoever funds these accounts; the path is exported as `ACCOUNT_DERIVATION_PATH`.
+
+  **Migration:** account 0 is unchanged, so most callers are unaffected. If an existing burner holds funds on its second or later account, move them before upgrading, or re-derive the old addresses from the mnemonic at `m/44'/60'/{index}'/0/0`. A persisted account selection that no longer exists is ignored, and the first account is used.
+
+  Also fixed: `importMnemonic` now derives before it commits, so a rejected mnemonic changes nothing. It previously stored the new value before validating it, so a typo became the mnemonic `walletManager.get()` reported while the previous one kept signing and stayed in `localStorage`. The two only agreed again after a reload, and a settings screen reading `get()` showed the rejected input as the current wallet.
+
+- 704d838: Point the burner at a chain in the tab, and let it derive one account.
+
+  `nodeURL` now takes `string | EIP1193NodeProvider` rather than `string` alone. The implementation already coped: the RPC client is built with `createCurriedJSONRPC(nodeURL)`, and for a non-string endpoint `remote-procedure-call` calls `endpoint.request({method, params})` per request. Only the type stood in the way, so a consumer pointing the burner at an in-browser chain (webevm) carried a cast. Nothing about the URL path changes.
+
+  `EIP1193NodeProvider` is deliberately just `{request(args): Promise<any>}` rather than `EIP1193Provider` from `eip-1193`. That type is an intersection of per-method overloads plus `on`/`removeListener`, which no node object with a generic `request` satisfies, so naming it would have left the cast exactly where it was. The methods required are the methods used, and a node is asked for no events.
+
+  New `accountCount?: number` option, defaulting to the existing ten. A wallet offering several accounts makes a connecting app show an account picker, which is a second dialog between a player and a game they have already chosen to play; `accountCount: 1` removes it. It bounds derivation rather than filtering it, so account _n_ is the same address whatever the count. Non-integers and values below 1 throw at creation.
+
+  The option exists so nobody hides accounts by wrapping the provider: connectors such as `EthereumWalletProvider` in `@etherplay/wallet-connector-ethereum` call `on` and `removeListener` as well as `request`, so a wrapper forwarding only `request` throws `removeListener is not a function` from inside the connection, as a failed transaction, after the send is signed. That hazard is now stated on the returned provider's type and held by a test.
+
 ## 0.0.9
 
 ### Patch Changes
