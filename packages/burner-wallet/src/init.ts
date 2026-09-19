@@ -2,19 +2,27 @@
 
 import type {EIP1193Provider} from 'eip-1193';
 import {createBurnerWalletProvider} from './provider.js';
-import type {BurnerWalletManager, Hex} from './types.js';
+import type {BurnerWalletManager, BurnerWalletNode, Hex} from './types.js';
 import {
 	announceBurnerWallet,
 	type AnnounceBurnerWalletOptions,
 } from './announcer.js';
 
 export type InitBurnerWalletOptions = {
-	/** Ethereum JSON-RPC endpoint URL */
-	nodeURL: string;
+	/**
+	 * Ethereum JSON-RPC endpoint URL, or an EIP-1193 node object to call
+	 * directly - an in-browser chain has no URL. See `EIP1193NodeProvider`.
+	 */
+	nodeURL: BurnerWalletNode;
 	/** localStorage key prefix (default: 'burner-wallet:') */
 	storagePrefix?: string;
 	/** List of addresses to impersonate - requires a node that supports hardhat_impersonateAccount */
 	impersonateAddresses?: Hex[];
+	/**
+	 * How many accounts to derive (default: ten). Pass 1 so a connecting app has
+	 * no account picker to show. See `CreateBurnerWalletProviderOptions`.
+	 */
+	accountCount?: number;
 } & AnnounceBurnerWalletOptions;
 
 export type BurnerWalletInstance = {
@@ -46,6 +54,7 @@ export function initBurnerWallet(
 		nodeURL: options.nodeURL,
 		storagePrefix: options.storagePrefix,
 		impersonateAddresses: options.impersonateAddresses,
+		accountCount: options.accountCount,
 	});
 
 	const announcerCleanup = announceBurnerWallet(provider, options);

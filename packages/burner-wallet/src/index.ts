@@ -6,6 +6,8 @@ export {
 	type Hex,
 	type BurnerWalletState,
 	type BurnerWalletManager,
+	type EIP1193NodeProvider,
+	type BurnerWalletNode,
 	type CreateBurnerWalletProviderOptions,
 	type BurnerWalletProviderResult,
 } from './types.js';

@@ -25,6 +25,15 @@ import {
 	type BurnerWalletProviderResult,
 } from './types.js';
 
+/**
+ * What `createCurriedJSONRPC` will take: a URL string, or an object it calls
+ * `.request({method, params})` on. The object half is an intersection of one
+ * overload per known RPC method, which no real node object satisfies
+ * structurally, so the node branch is cast into it exactly once, here. The
+ * runtime path is the same either way - see `EIP1193NodeProvider`.
+ */
+type JSONRPCEndpoint = Parameters<typeof createCurriedJSONRPC>[0];
+
 type EventName =
 	| 'accountsChanged'
 	| 'chainChanged'
@@ -46,7 +55,17 @@ export function createBurnerWalletProvider(
 		nodeURL,
 		storagePrefix = 'burner-wallet:',
 		impersonateAddresses,
+		accountCount = ACCOUNT_COUNT,
 	} = options;
+
+	// Checked here rather than at the first request, so a bad count fails at the
+	// call that is wrong instead of surfacing later as an empty account list.
+	if (!Number.isInteger(accountCount) || accountCount < 1) {
+		throw new Error(
+			`accountCount must be an integer >= 1, got ${String(accountCount)}`,
+		);
+	}
+
 	const eventListeners = new Map<EventName, Set<EventListener>>();
 
 	// ==================== Internal State ====================
@@ -105,14 +124,22 @@ export function createBurnerWalletProvider(
 
 	// ==================== Inner Provider ====================
 	function buildInner(): EIP1193ProviderWithoutEvents {
-		const rpcProvider = createCurriedJSONRPC(nodeURL);
+		// `createCurriedJSONRPC` takes `string | RequestRPC<Methods>`: a URL it
+		// fetches, or an object it calls `.request({method, params})` on. Our node
+		// type states only the `.request` that is actually used, which is why the
+		// object branch needs telling apart here rather than at the call site.
+		const rpcProvider = createCurriedJSONRPC(
+			typeof nodeURL === 'string'
+				? nodeURL
+				: (nodeURL as unknown as JSONRPCEndpoint),
+		);
 
 		const providerOptions: ProviderOptions = {};
 
 		if (mnemonic) {
 			providerOptions.accounts = {
 				mnemonic,
-				numAccounts: ACCOUNT_COUNT,
+				numAccounts: accountCount,
 			};
 		}
 

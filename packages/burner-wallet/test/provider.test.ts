@@ -167,7 +167,7 @@ describe('createBurnerWalletProvider', () => {
 		expect(listener).not.toHaveBeenCalled();
 	});
 
-	it('returns 10 accounts (fixed account count)', async () => {
+	it('returns 10 accounts by default (see accountCount to change it)', async () => {
 		const {provider, walletManager} = createBurnerWalletProvider({
 			nodeURL: 'http://localhost:8545',
 		});
