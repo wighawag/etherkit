@@ -2,7 +2,8 @@
 
 import type {
 	EIP1193Provider,
-	EIP1193ProviderWithoutEvents,
+	EIP1193CoreProvider,
+	EIP1193GenericRequestProvider,
 	EIP1193Account,
 	EIP1193ChainId,
 	EIP1193ConnectInfoMessage,
@@ -13,7 +14,8 @@ import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {
 	extendProviderWithAccounts,
 	generateMnemonic,
-	ProviderOptions,
+	type EIP1193AccountsProvider,
+	type ProviderOptions,
 } from 'eip-1193-accounts-wrapper';
 import {english} from 'viem/accounts';
 import {derivePrivateKeys} from './derivation.js';
@@ -31,7 +33,7 @@ import {
  * `.request({method, params})` on. The object half is an intersection of one
  * overload per known RPC method, which no real node object satisfies
  * structurally, so the node branch is cast into it exactly once, here. The
- * runtime path is the same either way - see `EIP1193NodeProvider`.
+ * runtime path is the same either way - see `BurnerWalletNodeProvider`.
  */
 type JSONRPCEndpoint = Parameters<typeof createCurriedJSONRPC>[0];
 
@@ -48,6 +50,20 @@ type EventListener =
 	| ((info: EIP1193ConnectInfoMessage) => unknown)
 	| ((error: EIP1193ProviderRpcError) => unknown)
 	| ((message: EIP1193Message) => unknown);
+
+/** Chain ids compared as numbers: `0x7a69` and `0x07a69` are the same chain. */
+function sameChain(a: string, b: string): boolean {
+	try {
+		return BigInt(a) === BigInt(b);
+	} catch {
+		return false;
+	}
+}
+
+/** An EIP-1193 `ProviderRpcError`: an `Error` with a numeric `code`. */
+function rpcError(code: number, message: string): Error & {code: number} {
+	return Object.assign(new Error(message), {code});
+}
 
 export function createBurnerWalletProvider(
 	options: CreateBurnerWalletProviderOptions,
@@ -133,9 +149,7 @@ export function createBurnerWalletProvider(
 	 * alternative - assign, then build, then save - leaves a rejected mnemonic in
 	 * `walletManager.get()` while storage and signing still use the old one.
 	 */
-	function buildInner(
-		forMnemonic: string | null,
-	): EIP1193ProviderWithoutEvents {
+	function buildInner(forMnemonic: string | null): EIP1193AccountsProvider {
 		// `createCurriedJSONRPC` takes `string | RequestRPC<Methods>`: a URL it
 		// fetches, or an object it calls `.request({method, params})` on. Our node
 		// type states only the `.request` that is actually used, which is why the
@@ -162,7 +176,10 @@ export function createBurnerWalletProvider(
 			providerOptions.impersonate = {
 				impersonator: {
 					impersonateAccount: async (params: {address: Hex}) => {
-						await (rpcProvider as any).request({
+						// Not in any eip-1193 table the client is typed with: the untyped escape hatch.
+						await (
+							rpcProvider as unknown as EIP1193GenericRequestProvider
+						).request({
 							method: 'hardhat_impersonateAccount',
 							params: [params.address],
 						});
@@ -173,8 +190,12 @@ export function createBurnerWalletProvider(
 			};
 		}
 
+		// `rpcProvider` is remote-procedure-call's client over an untyped method
+		// table, so it does not carry eip-1193's per-method overloads: this is the
+		// one place it is asserted to be what the wrapper needs, a provider of the
+		// core methods (which the node it points at serves).
 		return extendProviderWithAccounts(
-			rpcProvider as unknown as EIP1193ProviderWithoutEvents,
+			rpcProvider as unknown as EIP1193CoreProvider,
 			providerOptions,
 		);
 	}
@@ -252,13 +273,19 @@ export function createBurnerWalletProvider(
 	// ==================== Provider ====================
 	const provider: EIP1193Provider = {
 		async request(args: {method: string; params?: readonly unknown[]}) {
+			// A genuine boundary: this is the wallet's own router, which receives any
+			// method as a runtime string and forwards it, so it talks to the inner
+			// provider through the untyped request signature. Read `inner` at call
+			// time: `walletManager.createNew()` below replaces it.
+			const forward = () => inner as unknown as EIP1193GenericRequestProvider;
+
 			// Auto-create wallet on first connection
 			if (args.method === 'eth_requestAccounts') {
 				if (!mnemonic) {
 					walletManager.createNew();
 				}
-				const accounts = await inner.request(args as any);
-				return getOrderedAddresses(accounts as unknown as string[]);
+				const accounts = await forward().request<string[]>(args);
+				return getOrderedAddresses(accounts);
 			}
 
 			// Return ordered addresses
@@ -266,12 +293,54 @@ export function createBurnerWalletProvider(
 				if (!mnemonic) {
 					walletManager.createNew();
 				}
-				const accounts = await inner.request(args as any);
-				return getOrderedAddresses(accounts as unknown as string[]);
+				const accounts = await forward().request<string[]>(args);
+				return getOrderedAddresses(accounts);
+			}
+
+			// THE BURNER IS BOUND TO ONE NODE, so it is always on that node's chain
+			// and can neither move to another nor add one. Without these two, the
+			// requests went to the node, which answers "method not found" (-32601),
+			// so an app asking to switch could not tell "wrong chain" from "broken
+			// wallet". Answer them the way a wallet that lacks the chain does.
+			if (
+				args.method === 'wallet_switchEthereumChain' ||
+				args.method === 'wallet_addEthereumChain'
+			) {
+				const requested = (args.params?.[0] as {chainId?: unknown} | undefined)
+					?.chainId;
+				if (
+					typeof requested !== 'string' ||
+					!/^0x[0-9a-fA-F]+$/.test(requested)
+				) {
+					// EIP-3326 / EIP-3085: the chain id is a 0x-prefixed hex string.
+					throw rpcError(
+						-32602,
+						`${args.method} expects [{chainId: <0x-prefixed hex>}], got ${JSON.stringify(args.params)}`,
+					);
+				}
+				const current = await forward().request<string>({
+					method: 'eth_chainId',
+				});
+				if (sameChain(requested, current)) {
+					return null; // EIP-3326 / EIP-3085: success is `null`
+				}
+				throw args.method === 'wallet_switchEthereumChain'
+					? // EIP-3326: 4902 is "this chain has not been added", which is what
+						// tells an app it may try wallet_addEthereumChain.
+						rpcError(
+							4902,
+							`Unrecognized chain ID "${requested}": the burner wallet is bound to its node, on chain ${current}`,
+						)
+					: // EIP-1193 4200 "unsupported": adding a chain is not something
+						// this wallet can do, and retrying will not change that.
+						rpcError(
+							4200,
+							`The burner wallet cannot add chain "${requested}": it is bound to its node, on chain ${current}`,
+						);
 			}
 
 			// All other methods delegate to inner provider
-			return inner.request(args as any);
+			return forward().request(args);
 		},
 
 		on(eventName: string, listener: (...args: any[]) => any) {

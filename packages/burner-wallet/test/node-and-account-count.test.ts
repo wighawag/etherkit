@@ -295,3 +295,95 @@ describe('the provider a connector is handed', () => {
 		).toThrow(TypeError);
 	});
 });
+
+describe('chain switching on a wallet bound to one node', () => {
+	beforeEach(() => {
+		for (const key of Object.keys(store)) {
+			delete store[key];
+		}
+		vi.clearAllMocks();
+	});
+
+	it('answers wallet_switchEthereumChain with null for the node chain, without asking the node to switch', async () => {
+		const {node, calls} = createFakeNode('0x7a69');
+		const {provider} = createBurnerWalletProvider({nodeURL: node});
+		const result = await provider.request({
+			method: 'wallet_switchEthereumChain',
+			params: [{chainId: '0x7A69'}],
+		});
+		expect(result).toBeNull();
+		expect(calls.some((c) => c.method.startsWith('wallet_'))).toBe(false);
+	});
+
+	it('refuses another chain with 4902, so an app can tell it from a broken wallet', async () => {
+		const {node} = createFakeNode('0x7a69');
+		const {provider} = createBurnerWalletProvider({nodeURL: node});
+		await expect(
+			provider.request({
+				method: 'wallet_switchEthereumChain',
+				params: [{chainId: '0x1'}],
+			}),
+		).rejects.toMatchObject({code: 4902});
+	});
+
+	it('answers wallet_addEthereumChain with null for its own chain and 4200 for any other', async () => {
+		const {node, calls} = createFakeNode('0x7a69');
+		const {provider} = createBurnerWalletProvider({nodeURL: node});
+		const chain = {
+			chainName: 'x',
+			nativeCurrency: {name: 'ETH', symbol: 'ETH', decimals: 18},
+			rpcUrls: ['http://localhost:8545'],
+		};
+		await expect(
+			provider.request({
+				method: 'wallet_addEthereumChain',
+				params: [{...chain, chainId: '0x7a69'}],
+			}),
+		).resolves.toBeNull();
+		await expect(
+			provider.request({
+				method: 'wallet_addEthereumChain',
+				params: [{...chain, chainId: '0x1'}],
+			}),
+		).rejects.toMatchObject({code: 4200});
+		expect(calls.some((c) => c.method.startsWith('wallet_'))).toBe(false);
+	});
+
+	it('compares chain ids as numbers, so a zero-padded id is the same chain', async () => {
+		const {node} = createFakeNode('0x7a69');
+		const {provider} = createBurnerWalletProvider({nodeURL: node});
+		await expect(
+			provider.request({
+				method: 'wallet_switchEthereumChain',
+				params: [{chainId: '0x07a69'}],
+			}),
+		).resolves.toBeNull();
+	});
+
+	it('refuses a missing or non-hex chain id with -32602', async () => {
+		const {node} = createFakeNode('0x7a69');
+		const {provider} = createBurnerWalletProvider({nodeURL: node});
+		for (const params of [[], [{}], [{chainId: '31337'}]]) {
+			await expect(
+				provider.request({
+					method: 'wallet_switchEthereumChain',
+					params,
+				} as never),
+			).rejects.toMatchObject({code: -32602});
+		}
+	});
+
+	it('surfaces the node error when the node cannot report its chain', async () => {
+		const node = {
+			request: () =>
+				Promise.reject(Object.assign(new Error('node down'), {code: -32000})),
+		};
+		const {provider} = createBurnerWalletProvider({nodeURL: node});
+		await expect(
+			provider.request({
+				method: 'wallet_switchEthereumChain',
+				params: [{chainId: '0x1'}],
+			}),
+		).rejects.toMatchObject({code: -32000});
+	});
+});

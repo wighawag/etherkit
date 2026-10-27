@@ -77,7 +77,7 @@ Creates the provider and announces it over EIP-6963 in one call.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `nodeURL` | `string \| EIP1193NodeProvider` | (required) | JSON-RPC endpoint URL, or a node object with an async `request` |
+| `nodeURL` | `string \| BurnerWalletNodeProvider` | (required) | JSON-RPC endpoint URL, or a node object with an async `request` |
 | `accountCount` | `number` | `10` | Accounts derived from the mnemonic. Integer >= 1; pass `1` for no account picker |
 | `storagePrefix` | `string` | `'burner-wallet:'` | `localStorage` key prefix |
 | `impersonateAddresses` | `Hex[]` | none | Addresses to impersonate; needs a node supporting `hardhat_impersonateAccount` |
@@ -139,7 +139,7 @@ Announces immediately and again on every `eip6963:requestProvider`, and returns 
 
 ### Other exports
 
-`ACCOUNT_COUNT` (the default ten), `ACCOUNT_DERIVATION_PATH` (the BIP-44 path, for telling a user where to import the mnemonic), `BURNER_WALLET_SVG` and `BURNER_WALLET_ICON_DATA_URI` (the flame icon, for reusing it in your own picker entry), and the types `Hex`, `EIP1193NodeProvider`, `BurnerWalletNode`, `BurnerWalletState`, `BurnerWalletManager`, `CreateBurnerWalletProviderOptions`, `BurnerWalletProviderResult`, `InitBurnerWalletOptions`, `BurnerWalletInstance`, `EIP6963ProviderInfo`, `EIP6963ProviderDetail`, `AnnounceBurnerWalletOptions`.
+`ACCOUNT_COUNT` (the default ten), `ACCOUNT_DERIVATION_PATH` (the BIP-44 path, for telling a user where to import the mnemonic), `BURNER_WALLET_SVG` and `BURNER_WALLET_ICON_DATA_URI` (the flame icon, for reusing it in your own picker entry), and the types `Hex`, `BurnerWalletNodeProvider` (formerly `EIP1193NodeProvider`, kept as a deprecated alias), `BurnerWalletNode`, `BurnerWalletState`, `BurnerWalletManager`, `CreateBurnerWalletProviderOptions`, `BurnerWalletProviderResult`, `InitBurnerWalletOptions`, `BurnerWalletInstance`, `EIP6963ProviderInfo`, `EIP6963ProviderDetail`, `AnnounceBurnerWalletOptions`.
 
 ## Events
 
@@ -148,7 +148,7 @@ Announces immediately and again on every `eip6963:requestProvider`, and returns 
 | `connect` | Once, shortly after creation, carrying the node's `chainId`. Registering a listener synchronously after the call is soon enough |
 | `accountsChanged` | On `createNew`, `importMnemonic`, `selectAccount` and `clearAll` |
 
-`chainChanged`, `disconnect` and `message` can be subscribed to, because connectors subscribe to them unconditionally, but this wallet never emits them: it is bound to one node for its lifetime, and a burner that has lost its node has lost its chain rather than changed it.
+`chainChanged`, `disconnect` and `message` can be subscribed to, because connectors subscribe to them unconditionally, but this wallet never emits them: it is bound to one node for its lifetime, and a burner that has lost its node has lost its chain rather than changed it. For the same reason it answers `wallet_switchEthereumChain` and `wallet_addEthereumChain` itself: `null` for its node's chain, and an error for any other (4902 for a switch, 4200 for an add), rather than forwarding them to a node that does not know them.
 
 ## Account derivation
 
