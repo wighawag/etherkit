@@ -310,8 +310,11 @@ export type TransactionObserver = {
 	/**
 	 * Set or update the EIP-1193 provider used for blockchain queries.
 	 * Also refreshes the cached chain id used to skip intents from another chain.
+	 *
+	 * Only read methods are called, so any provider is accepted: a browser wallet, a JSON-RPC
+	 * node or a plain HTTP node (eip-1193's `EIP1193CoreProvider`).
 	 */
-	setProvider(provider: import('eip-1193').EIP1193Provider): void;
+	setProvider(provider: import('eip-1193').EIP1193CoreProvider): void;
 
 	/**
 	 * Remove a transaction intent by its ID.

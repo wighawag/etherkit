@@ -46,13 +46,13 @@
 	"dependencies": {
 		"lodash-es": "^4.17.23",
 		"named-logs": "^0.4.1",
-		"radiate": "^0.3.2"
+		"radiate": "^0.3.2",
+		"eip-1193": "^0.7.3"
 	},
 	"devDependencies": {
 		"@types/lodash-es": "^4.17.12",
 		"@vitest/coverage-v8": "^4.0.18",
 		"as-soon": "^0.1.5",
-		"eip-1193": "^0.6.5",
 		"prettier": "^3.8.0",
 		"typescript": "^5.3.3",
 		"vitest": "^4.0.18"
