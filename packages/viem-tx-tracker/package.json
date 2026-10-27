@@ -1,6 +1,6 @@
 {
 	"name": "@etherkit/viem-tx-tracker",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "A thin wrapper around a viem WalletClient that records what you sent (hash, from, nonce, metadata) and emits an event per broadcast, so you can track it afterwards",
 	"keywords": [
 		"ethereum",
