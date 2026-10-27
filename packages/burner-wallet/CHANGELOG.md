@@ -1,5 +1,17 @@
 # @etherkit/burner-wallet
 
+## 0.2.2
+
+### Patch Changes
+
+- 97fa52e: The burner now says it never prompts. Its EIP-6963 announcement carries `info.autoApproves: true`, the field `@etherplay/wallet-connector` declares on `WalletInfo` and `@etherplay/connect` 0.17 reads with `walletPrompts(info)`. A wallet announced without it is assumed to prompt, so until now an app on connect 0.17 told users to confirm requests in a wallet that never asks, unless it matched the name "Burner Wallet" by hand. Apps can now read `walletPrompts(connection.wallet?.info)` instead.
+
+  `EIP6963ProviderInfo` gains the optional `autoApproves` field, and `announceBurnerWallet` and `initBurnerWallet` take an `autoApproves` option (default `true`) for announcing a provider that does prompt. The field is declared here rather than imported: burner-wallet still has no runtime dependency on connect or wallet-connector.
+
+  A patch rather than a minor: the change is additive (one optional field, one optional option), and under 0.x a minor is the breaking bump, which would strand every app on `^0.2.x`.
+
+- 97fa52e: Document the 0.1.0 derivation path change for people carrying an old burner. The README now has an "Upgrading from 0.0.x" section: the mnemonic in `localStorage` is kept and account 0 keeps its address, but accounts 1 and above change address (from `m/44'/60'/{index}'/0/0` to `m/44'/60'/0'/0/{index}`), so funds on them look lost. It says what to do: move them to account 0 before upgrading, or derive the old accounts afterwards from the same mnemonic with viem's `mnemonicToAccount(mnemonic, {accountIndex})` and move them then. Documentation only, no code change.
+
 ## 0.2.1
 
 ### Patch Changes
