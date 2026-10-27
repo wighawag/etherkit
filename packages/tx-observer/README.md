@@ -150,7 +150,7 @@ Creates a new transaction processor instance.
 |-------|------|-------------|
 | `finality` | `number` | Number of blocks until a transaction is considered final |
 | `throttle` | `number?` | Optional: throttle interval in ms for `process()` calls |
-| `provider` | `EIP1193ProviderWithoutEvents?` | Optional Ethereum provider (can be set later) |
+| `provider` | `EIP1193CoreProvider?` | Optional Ethereum provider (can be set later). Only read methods are used, so a browser wallet, a JSON-RPC node and a plain HTTP node provider all fit |
 | `alwaysFetchReceipt` | `boolean?` | Fetch the receipt directly even when the tx view hides its block. Recovers mined txs from lagging/injected wallets (e.g. MetaMask on a restartable dev chain) that keep returning a stale pending view from `eth_getTransactionByHash` (`blockNumber: null`). Default `false`. |
 
 **Returns:** Processor instance with the following methods:
@@ -226,7 +226,7 @@ A tick costs nothing when there is nothing to ask about: an intent whose transac
 await processor.process();
 ```
 
-#### `setProvider(provider: EIP1193Provider)`
+#### `setProvider(provider: EIP1193CoreProvider)`
 
 Update the Ethereum provider. This also re-reads `eth_chainId` and drops everything that was derived from the previous chain (the cached chain id, the last known block number, and any "nothing left to learn" verdicts).
 

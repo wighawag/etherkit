@@ -48,6 +48,9 @@ importers:
 
   packages/tx-observer:
     dependencies:
+      eip-1193:
+        specifier: ^0.7.3
+        version: 0.7.3
       lodash-es:
         specifier: ^4.17.23
         version: 4.17.23
@@ -67,9 +70,6 @@ importers:
       as-soon:
         specifier: ^0.1.5
         version: 0.1.5
-      eip-1193:
-        specifier: ^0.6.5
-        version: 0.6.5
       prettier:
         specifier: ^3.8.0
         version: 3.8.1
@@ -1044,6 +1044,9 @@ packages:
 
   eip-1193@0.6.5:
     resolution: {integrity: sha512-KXCSdjFLIT5/06rMD2pMqoAZhZcTg4EofiCI70ovIOy8L/6twGJFE+RtW89S/hMFKDoNEGJ/WK8jQv7CpuGDgg==}
+
+  eip-1193@0.7.3:
+    resolution: {integrity: sha512-oznmudxUQ2dG44QF4rF5VP/SkI5g0AqTURtUxuj7T4GQIXuAkIhzPZ64AOt3C58j7sdJG0gNfS8sR0kc3wMZnA==}
 
   enquirer@2.4.1:
     resolution: {integrity: sha512-rRqJg/6gd538VHvR3PSrdRBb/1Vy2YfzHqzvbhGIQpDRKIa4FgV/54b5Q1xYSxOOwKvjXweS26E0Q+nAMwp2pQ==}
@@ -2646,6 +2649,8 @@ snapshots:
       - zod
 
   eip-1193@0.6.5: {}
+
+  eip-1193@0.7.3: {}
 
   enquirer@2.4.1:
     dependencies:

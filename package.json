@@ -8,8 +8,10 @@
 		"@changesets/cli": "^2.29.8"
 	},
 	"scripts": {
-		"prepublishOnly": "pnpm format:check && pnpm build",
+		"prepublishOnly": "pnpm format:check && pnpm build && pnpm check:type-deps",
 		"release": "pnpm prepublishOnly && git push --all && pnpm changeset publish && git push --tags",
+		"release:ci": "pnpm prepublishOnly && pnpm changeset publish",
+		"check:type-deps": "node scripts/check-type-deps.mjs packages/*",
 		"format": "pnpm run -r format",
 		"format:check": "pnpm run -r format:check",
 		"build": "pnpm run -r build",

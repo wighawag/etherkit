@@ -1,9 +1,4 @@
-import type {
-	EIP1193Provider,
-	EIP1193Block,
-	EIP1193ProviderWithoutEvents,
-	DeepReadonly,
-} from 'eip-1193';
+import type {EIP1193Block, EIP1193CoreProvider, DeepReadonly} from 'eip-1193';
 import {logs} from 'named-logs';
 import {throttle} from 'lodash-es';
 import {Emitter} from 'radiate';
@@ -200,7 +195,7 @@ type ProcessContext = {
 export function createTransactionObserver(config: {
 	finality: number;
 	throttle?: number;
-	provider?: EIP1193ProviderWithoutEvents;
+	provider?: EIP1193CoreProvider;
 	/**
 	 * Some providers (notably injected wallets like MetaMask on dev/local
 	 * chains) cache `eth_getTransactionByHash` and keep returning a stale
@@ -228,7 +223,7 @@ export function createTransactionObserver(config: {
 		'intents:cleared': void;
 	}>();
 
-	let provider: EIP1193ProviderWithoutEvents | undefined = config.provider;
+	let provider: EIP1193CoreProvider | undefined = config.provider;
 	const intentsById: {[id: string]: TransactionIntent} = {};
 	// Maintain tx hash lookup for efficient updates
 	const txToIntent: {[txHash: string]: TransactionIntent} = {};
@@ -937,7 +932,7 @@ export function createTransactionObserver(config: {
 	}
 
 	return {
-		setProvider(newProvider: EIP1193Provider) {
+		setProvider(newProvider: EIP1193CoreProvider) {
 			provider = newProvider;
 			providerGeneration++;
 			chainId = undefined;
