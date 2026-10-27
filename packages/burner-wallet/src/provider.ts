@@ -308,10 +308,20 @@ export function createBurnerWalletProvider(
 			) {
 				const requested = (args.params?.[0] as {chainId?: unknown} | undefined)
 					?.chainId;
+				if (
+					typeof requested !== 'string' ||
+					!/^0x[0-9a-fA-F]+$/.test(requested)
+				) {
+					// EIP-3326 / EIP-3085: the chain id is a 0x-prefixed hex string.
+					throw rpcError(
+						-32602,
+						`${args.method} expects [{chainId: <0x-prefixed hex>}], got ${JSON.stringify(args.params)}`,
+					);
+				}
 				const current = await forward().request<string>({
 					method: 'eth_chainId',
 				});
-				if (typeof requested === 'string' && sameChain(requested, current)) {
+				if (sameChain(requested, current)) {
 					return null; // EIP-3326 / EIP-3085: success is `null`
 				}
 				throw args.method === 'wallet_switchEthereumChain'
@@ -319,13 +329,13 @@ export function createBurnerWalletProvider(
 						// tells an app it may try wallet_addEthereumChain.
 						rpcError(
 							4902,
-							`Unrecognized chain ID "${String(requested)}": the burner wallet is bound to its node, on chain ${current}`,
+							`Unrecognized chain ID "${requested}": the burner wallet is bound to its node, on chain ${current}`,
 						)
 					: // EIP-1193 4200 "unsupported": adding a chain is not something
 						// this wallet can do, and retrying will not change that.
 						rpcError(
 							4200,
-							`The burner wallet cannot add chain "${String(requested)}": it is bound to its node, on chain ${current}`,
+							`The burner wallet cannot add chain "${requested}": it is bound to its node, on chain ${current}`,
 						);
 			}
 
