@@ -6,6 +6,19 @@ export type EIP6963ProviderInfo = {
 	name: string;
 	icon: string;
 	rdns: string;
+	/**
+	 * The wallet never puts a dialog in front of the user: it holds its own key
+	 * and answers every request by itself.
+	 *
+	 * Not part of EIP-6963, which leaves `info` open to extra fields. It is the
+	 * field `@etherplay/wallet-connector`'s `WalletInfo` declares (and
+	 * `@etherplay/connect` reads with `walletPrompts(info)`), so a picker built on
+	 * those libraries stops telling the user to confirm something in a wallet
+	 * that will never ask. Spelled out here rather than imported, so this package
+	 * does not depend on them. Absent means "prompts", which is what every other
+	 * wallet is assumed to do.
+	 */
+	autoApproves?: boolean;
 };
 
 export type EIP6963ProviderDetail = {
@@ -55,6 +68,13 @@ export type AnnounceBurnerWalletOptions = {
 	uuid?: string;
 	/** Storage prefix for persisting UUID. Defaults to 'burner-wallet:' */
 	storagePrefix?: string;
+	/**
+	 * Announced as `info.autoApproves`. Defaults to `true`, because the burner
+	 * signs locally and never prompts. Pass `false` only when announcing a
+	 * provider that does ask the user (for example one you wrapped with your own
+	 * confirmation dialog).
+	 */
+	autoApproves?: boolean;
 };
 
 export function announceBurnerWallet(
@@ -68,6 +88,7 @@ export function announceBurnerWallet(
 		name: options?.name ?? 'Burner Wallet',
 		icon: options?.icon ?? BURNER_WALLET_ICON_DATA_URI,
 		rdns: options?.rdns ?? 'app.etherplay.burner-wallet',
+		autoApproves: options?.autoApproves ?? true,
 	});
 
 	const detail: EIP6963ProviderDetail = {

@@ -85,6 +85,7 @@ Creates the provider and announces it over EIP-6963 in one call.
 | `icon` | `string` | flame SVG data URI | Icon shown in pickers |
 | `rdns` | `string` | `'app.etherplay.burner-wallet'` | Reverse DNS identifier |
 | `uuid` | `string` | generated and persisted | EIP-6963 instance id |
+| `autoApproves` | `boolean` | `true` | Announced as `info.autoApproves`: this wallet never prompts. See [It never prompts](#it-never-prompts) |
 
 **Returns** `{provider, walletManager, cleanup}`. `cleanup()` stops the announcements and drops every event listener.
 
@@ -135,11 +136,23 @@ Announces any EIP-1193 provider over EIP-6963. `initBurnerWallet` calls it for y
 const stop = announceBurnerWallet(provider, {name: 'My Burner Wallet'});
 ```
 
-Announces immediately and again on every `eip6963:requestProvider`, and returns a function that stops listening. Takes `name`, `icon`, `rdns`, `uuid` and `storagePrefix`. With no `uuid` it generates one and persists it at `<storagePrefix>eip6963-uuid`, because EIP-6963 wants the id stable across a session.
+Announces immediately and again on every `eip6963:requestProvider`, and returns a function that stops listening. Takes `name`, `icon`, `rdns`, `uuid`, `storagePrefix` and `autoApproves`. With no `uuid` it generates one and persists it at `<storagePrefix>eip6963-uuid`, because EIP-6963 wants the id stable across a session.
 
 ### Other exports
 
 `ACCOUNT_COUNT` (the default ten), `ACCOUNT_DERIVATION_PATH` (the BIP-44 path, for telling a user where to import the mnemonic), `BURNER_WALLET_SVG` and `BURNER_WALLET_ICON_DATA_URI` (the flame icon, for reusing it in your own picker entry), and the types `Hex`, `BurnerWalletNodeProvider` (formerly `EIP1193NodeProvider`, kept as a deprecated alias), `BurnerWalletNode`, `BurnerWalletState`, `BurnerWalletManager`, `CreateBurnerWalletProviderOptions`, `BurnerWalletProviderResult`, `InitBurnerWalletOptions`, `BurnerWalletInstance`, `EIP6963ProviderInfo`, `EIP6963ProviderDetail`, `AnnounceBurnerWalletOptions`.
+
+## It never prompts
+
+The burner holds its own key and signs locally, so there is never a dialog for the user to answer. It says so in its EIP-6963 announcement:
+
+```ts
+info: {uuid, name, icon, rdns, autoApproves: true}
+```
+
+`autoApproves` is not part of EIP-6963, which leaves `info` open to extra fields. It is the field `@etherplay/wallet-connector` declares on `WalletInfo` and `@etherplay/connect` (0.17 and later) reads with `walletPrompts(info)`: a wallet without it is assumed to prompt, and for one with it the connection announces no pending request, so an app does not tell the user to confirm something in a wallet that will never ask. Read it with `walletPrompts(connection.wallet?.info)` rather than matching the wallet's name. This package only writes the field; it does not depend on either library.
+
+Pass `autoApproves: false` only if you announce a provider that does ask the user, for example one you wrapped with your own confirmation dialog.
 
 ## Events
 
@@ -156,7 +169,34 @@ Accounts are derived from one mnemonic at **`m/44'/60'/0'/0/{index}`**, exported
 
 Concretely, with the standard test mnemonic, `eth_accounts` returns `0xf39F...2266`, `0x7099...79C8`, `0x3C44...93BC` and so on: the accounts the node prints at startup, already funded.
 
-> **Changed in 0.1.0.** Earlier versions walked BIP-44's *account* level (`m/44'/60'/{index}'/0/0`). Account 0 is identical under both, which is what made it hard to notice, but accounts 1 and up were addresses no other tool would show you. If you are carrying an older burner with funds on its second or later account, move them before upgrading, or re-derive the old addresses from the mnemonic at the old path.
+### Upgrading from 0.0.x: accounts 1 and above have new addresses
+
+> **Changed in 0.1.0.** Versions up to 0.0.9 derived accounts at `m/44'/60'/{index}'/0/0`, BIP-44's *account* level. 0.1.0 and later derive them at `m/44'/60'/0'/0/{index}`, the *address* level.
+
+What that means for someone who already has a burner in their browser:
+
+- **The mnemonic is kept.** It lives in `localStorage` (`<storagePrefix>mnemonic`), and upgrading the package does not touch it.
+- **Account 0 is unchanged.** Index 0 gives the same address under both paths, so a user who only ever used the first account notices nothing.
+- **Accounts 1 and above change address.** With the standard test mnemonic, account 1 was `0x8C8d35429F74ec245F8Ef2f4Fd1e551cFF97d650` and is now `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`. The old addresses are not gone, they are simply no longer listed by the wallet, so anything they hold (ETH, tokens, contract state keyed by the address) looks lost.
+- **A selected account that no longer exists is ignored** and the first account is used instead.
+
+If a user has funds or state on account 1 or above of an old burner, either:
+
+1. **Move them before upgrading.** While the app still runs a 0.0.x burner, send everything from the second and later accounts to account 0, which survives the upgrade.
+2. **Or recover them after upgrading.** The keys are still derivable from the same mnemonic at the old path. Read the mnemonic (`walletManager.get().mnemonic`, or the `localStorage` entry above) and derive the old accounts with viem, whose `accountIndex` is exactly the old level:
+
+   ```ts
+   import {mnemonicToAccount} from 'viem/accounts';
+
+   const {mnemonic} = walletManager.get();
+   if (!mnemonic) throw new Error('this burner has no mnemonic, so there is nothing to recover');
+   const oldAccount = (index: number) => mnemonicToAccount(mnemonic, {accountIndex: index}); // m/44'/60'/{index}'/0/0
+   console.log(oldAccount(1).address); // the address this burner used for account 1 before 0.1.0
+   ```
+
+   Then sign a transfer to a current account with `oldAccount(n)` (for example through a viem wallet client on the same chain), or import the mnemonic into a wallet that lets you set the derivation path to `m/44'/60'/{index}'/0/0`.
+
+For a dev chain that is reset on every start there is nothing to recover; this only matters for a chain whose state persists, such as a testnet or a long-lived local node.
 
 ## Impersonation
 
