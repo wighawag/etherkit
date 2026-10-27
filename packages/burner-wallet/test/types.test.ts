@@ -10,10 +10,12 @@ import type {
 	EIP1193NodeProvider as NodeProviderFromEIP1193,
 	EIP1193WindowWalletProvider,
 } from 'eip-1193';
+import type {WalletInfo} from '@etherplay/wallet-connector';
 import {
 	announceBurnerWallet,
 	createBurnerWalletProvider,
 	type BurnerWalletNodeProvider,
+	type EIP6963ProviderInfo,
 } from '../src/index.js';
 
 describe('createBurnerWalletProvider types', () => {
@@ -39,5 +41,18 @@ describe('createBurnerWalletProvider types', () => {
 			return [asWindowWallet, asCore, node];
 		};
 		expect(_neverCalled).toBeTypeOf('function');
+	});
+});
+
+describe('EIP6963ProviderInfo', () => {
+	it('is a WalletInfo, autoApproves included, so walletPrompts reads it', () => {
+		// If the field is renamed or retyped on either side this stops compiling.
+		const asWalletInfo: WalletInfo =
+			undefined as unknown as EIP6963ProviderInfo;
+		const autoApproves: WalletInfo['autoApproves'] =
+			undefined as unknown as EIP6963ProviderInfo['autoApproves'];
+		const back: EIP6963ProviderInfo['autoApproves'] =
+			undefined as unknown as WalletInfo['autoApproves'];
+		expect([asWalletInfo, autoApproves, back]).toBeDefined();
 	});
 });

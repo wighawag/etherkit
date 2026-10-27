@@ -189,7 +189,8 @@ If a user has funds or state on account 1 or above of an old burner, either:
    import {mnemonicToAccount} from 'viem/accounts';
 
    const {mnemonic} = walletManager.get();
-   const oldAccount = (index: number) => mnemonicToAccount(mnemonic!, {accountIndex: index}); // m/44'/60'/{index}'/0/0
+   if (!mnemonic) throw new Error('this burner has no mnemonic, so there is nothing to recover');
+   const oldAccount = (index: number) => mnemonicToAccount(mnemonic, {accountIndex: index}); // m/44'/60'/{index}'/0/0
    console.log(oldAccount(1).address); // the address this burner used for account 1 before 0.1.0
    ```
 
