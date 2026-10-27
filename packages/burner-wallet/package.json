@@ -45,7 +45,7 @@
 	"dependencies": {
 		"eip-1193": "^0.7.4",
 		"eip-1193-accounts-wrapper": "^0.3.0",
-		"remote-procedure-call": "^0.1.0"
+		"remote-procedure-call": "^0.2.0"
 	},
 	"devDependencies": {
 		"@vitest/coverage-v8": "^4.0.18",

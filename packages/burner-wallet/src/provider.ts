@@ -2,7 +2,7 @@
 
 import type {
 	EIP1193Provider,
-	EIP1193CoreProvider,
+	CoreMethods,
 	EIP1193GenericRequestProvider,
 	EIP1193Account,
 	EIP1193ChainId,
@@ -27,15 +27,6 @@ import {
 	type CreateBurnerWalletProviderOptions,
 	type BurnerWalletProviderResult,
 } from './types.js';
-
-/**
- * What `createCurriedJSONRPC` will take: a URL string, or an object it calls
- * `.request({method, params})` on. The object half is an intersection of one
- * overload per known RPC method, which no real node object satisfies
- * structurally, so the node branch is cast into it exactly once, here. The
- * runtime path is the same either way - see `BurnerWalletNodeProvider`.
- */
-type JSONRPCEndpoint = Parameters<typeof createCurriedJSONRPC>[0];
 
 type EventName =
 	| 'accountsChanged'
@@ -150,15 +141,10 @@ export function createBurnerWalletProvider(
 	 * `walletManager.get()` while storage and signing still use the old one.
 	 */
 	function buildInner(forMnemonic: string | null): EIP1193AccountsProvider {
-		// `createCurriedJSONRPC` takes `string | RequestRPC<Methods>`: a URL it
-		// fetches, or an object it calls `.request({method, params})` on. Our node
-		// type states only the `.request` that is actually used, which is why the
-		// object branch needs telling apart here rather than at the call site.
-		const rpcProvider = createCurriedJSONRPC(
-			typeof nodeURL === 'string'
-				? nodeURL
-				: (nodeURL as unknown as JSONRPCEndpoint),
-		);
+		// A URL it fetches, or the node object, whose `.request` it calls. Typed
+		// with eip-1193's core methods, the ones every node serves: since
+		// remote-procedure-call 0.2 the client is then an `EIP1193CoreProvider`.
+		const rpcProvider = createCurriedJSONRPC<CoreMethods>(nodeURL);
 
 		const providerOptions: ProviderOptions = {};
 
@@ -190,14 +176,7 @@ export function createBurnerWalletProvider(
 			};
 		}
 
-		// `rpcProvider` is remote-procedure-call's client over an untyped method
-		// table, so it does not carry eip-1193's per-method overloads: this is the
-		// one place it is asserted to be what the wrapper needs, a provider of the
-		// core methods (which the node it points at serves).
-		return extendProviderWithAccounts(
-			rpcProvider as unknown as EIP1193CoreProvider,
-			providerOptions,
-		);
+		return extendProviderWithAccounts(rpcProvider, providerOptions);
 	}
 
 	let inner = buildInner(mnemonic);

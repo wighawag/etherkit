@@ -1,7 +1,14 @@
 {
 	"name": "@etherkit/viem-tx-tracker",
 	"version": "0.2.0",
-	"description": "",
+	"description": "A thin wrapper around a viem WalletClient that records what you sent (hash, from, nonce, metadata) and emits an event per broadcast, so you can track it afterwards",
+	"keywords": [
+		"ethereum",
+		"viem",
+		"transactions",
+		"tracking",
+		"etherkit"
+	],
 	"license": "MIT",
 	"author": "Ronan Sandford",
 	"homepage": "https://github.com/wighawag/etherkit#readme",
