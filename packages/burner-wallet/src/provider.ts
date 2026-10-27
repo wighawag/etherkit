@@ -51,6 +51,20 @@ type EventListener =
 	| ((error: EIP1193ProviderRpcError) => unknown)
 	| ((message: EIP1193Message) => unknown);
 
+/** Chain ids compared as numbers: `0x7a69` and `0x07a69` are the same chain. */
+function sameChain(a: string, b: string): boolean {
+	try {
+		return BigInt(a) === BigInt(b);
+	} catch {
+		return false;
+	}
+}
+
+/** An EIP-1193 `ProviderRpcError`: an `Error` with a numeric `code`. */
+function rpcError(code: number, message: string): Error & {code: number} {
+	return Object.assign(new Error(message), {code});
+}
+
 export function createBurnerWalletProvider(
 	options: CreateBurnerWalletProviderOptions,
 ): BurnerWalletProviderResult {
@@ -281,6 +295,38 @@ export function createBurnerWalletProvider(
 				}
 				const accounts = await forward().request<string[]>(args);
 				return getOrderedAddresses(accounts);
+			}
+
+			// THE BURNER IS BOUND TO ONE NODE, so it is always on that node's chain
+			// and can neither move to another nor add one. Without these two, the
+			// requests went to the node, which answers "method not found" (-32601),
+			// so an app asking to switch could not tell "wrong chain" from "broken
+			// wallet". Answer them the way a wallet that lacks the chain does.
+			if (
+				args.method === 'wallet_switchEthereumChain' ||
+				args.method === 'wallet_addEthereumChain'
+			) {
+				const requested = (args.params?.[0] as {chainId?: unknown} | undefined)
+					?.chainId;
+				const current = await forward().request<string>({
+					method: 'eth_chainId',
+				});
+				if (typeof requested === 'string' && sameChain(requested, current)) {
+					return null; // EIP-3326 / EIP-3085: success is `null`
+				}
+				throw args.method === 'wallet_switchEthereumChain'
+					? // EIP-3326: 4902 is "this chain has not been added", which is what
+						// tells an app it may try wallet_addEthereumChain.
+						rpcError(
+							4902,
+							`Unrecognized chain ID "${String(requested)}": the burner wallet is bound to its node, on chain ${current}`,
+						)
+					: // EIP-1193 4200 "unsupported": adding a chain is not something
+						// this wallet can do, and retrying will not change that.
+						rpcError(
+							4200,
+							`The burner wallet cannot add chain "${String(requested)}": it is bound to its node, on chain ${current}`,
+						);
 			}
 
 			// All other methods delegate to inner provider

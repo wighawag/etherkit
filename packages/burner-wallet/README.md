@@ -148,7 +148,7 @@ Announces immediately and again on every `eip6963:requestProvider`, and returns 
 | `connect` | Once, shortly after creation, carrying the node's `chainId`. Registering a listener synchronously after the call is soon enough |
 | `accountsChanged` | On `createNew`, `importMnemonic`, `selectAccount` and `clearAll` |
 
-`chainChanged`, `disconnect` and `message` can be subscribed to, because connectors subscribe to them unconditionally, but this wallet never emits them: it is bound to one node for its lifetime, and a burner that has lost its node has lost its chain rather than changed it.
+`chainChanged`, `disconnect` and `message` can be subscribed to, because connectors subscribe to them unconditionally, but this wallet never emits them: it is bound to one node for its lifetime, and a burner that has lost its node has lost its chain rather than changed it. For the same reason it answers `wallet_switchEthereumChain` and `wallet_addEthereumChain` itself: `null` for its node's chain, and an error for any other (4902 for a switch, 4200 for an add), rather than forwarding them to a node that does not know them.
 
 ## Account derivation
 
