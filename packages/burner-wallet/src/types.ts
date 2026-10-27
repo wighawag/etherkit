@@ -29,12 +29,18 @@ export const ACCOUNT_COUNT = 10;
  * check bivariant, so a node declaring `params` as required, optional, `unknown`
  * or a tuple all fit.
  */
-export type EIP1193NodeProvider = {
+export type BurnerWalletNodeProvider = {
 	request(args: {method: string; params?: any}): Promise<any>;
 };
 
+/**
+ * @deprecated Renamed to {@link BurnerWalletNodeProvider}: eip-1193 0.7 exports its own
+ * `EIP1193NodeProvider` (a typed JSON-RPC node), which means something else.
+ */
+export type EIP1193NodeProvider = BurnerWalletNodeProvider;
+
 /** A JSON-RPC endpoint URL, or a chain living in the same tab. */
-export type BurnerWalletNode = string | EIP1193NodeProvider;
+export type BurnerWalletNode = string | BurnerWalletNodeProvider;
 
 export type BurnerWalletState = {
 	/** The mnemonic phrase - null if not yet created */
@@ -63,7 +69,7 @@ export type BurnerWalletManager = {
 export type CreateBurnerWalletProviderOptions = {
 	/**
 	 * Ethereum JSON-RPC endpoint URL, or an EIP-1193 node object to call
-	 * directly - an in-browser chain has no URL. See `EIP1193NodeProvider`.
+	 * directly - an in-browser chain has no URL. See `BurnerWalletNodeProvider`.
 	 */
 	nodeURL: BurnerWalletNode;
 	/** localStorage key prefix (default: 'burner-wallet:') */

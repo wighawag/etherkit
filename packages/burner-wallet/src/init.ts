@@ -11,7 +11,7 @@ import {
 export type InitBurnerWalletOptions = {
 	/**
 	 * Ethereum JSON-RPC endpoint URL, or an EIP-1193 node object to call
-	 * directly - an in-browser chain has no URL. See `EIP1193NodeProvider`.
+	 * directly - an in-browser chain has no URL. See `BurnerWalletNodeProvider`.
 	 */
 	nodeURL: BurnerWalletNode;
 	/** localStorage key prefix (default: 'burner-wallet:') */

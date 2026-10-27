@@ -6,6 +6,7 @@ export {
 	type Hex,
 	type BurnerWalletState,
 	type BurnerWalletManager,
+	type BurnerWalletNodeProvider,
 	type EIP1193NodeProvider,
 	type BurnerWalletNode,
 	type CreateBurnerWalletProviderOptions,

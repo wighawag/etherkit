@@ -10,7 +10,11 @@ import type {
 	EIP1193NodeProvider as NodeProviderFromEIP1193,
 	EIP1193WindowWalletProvider,
 } from 'eip-1193';
-import {createBurnerWalletProvider} from '../src/index.js';
+import {
+	announceBurnerWallet,
+	createBurnerWalletProvider,
+	type BurnerWalletNodeProvider,
+} from '../src/index.js';
 
 describe('createBurnerWalletProvider types', () => {
 	it('points at any eip-1193 0.7 node provider, and hands back a window wallet', () => {
@@ -28,7 +32,11 @@ describe('createBurnerWalletProvider types', () => {
 			const asWindowWallet: EIP1193WindowWalletProvider = provider;
 			// and what a read-only consumer (e.g. @etherkit/tx-observer) expects
 			const asCore: EIP1193CoreProvider = provider;
-			return [asWindowWallet, asCore];
+			// a 6963 consumer may announce a window wallet of its own
+			announceBurnerWallet(undefined as unknown as EIP1193WindowWalletProvider);
+			const node: BurnerWalletNodeProvider =
+				undefined as unknown as NodeProviderFromEIP1193;
+			return [asWindowWallet, asCore, node];
 		};
 		expect(_neverCalled).toBeTypeOf('function');
 	});

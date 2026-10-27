@@ -33,7 +33,7 @@ import {
  * `.request({method, params})` on. The object half is an intersection of one
  * overload per known RPC method, which no real node object satisfies
  * structurally, so the node branch is cast into it exactly once, here. The
- * runtime path is the same either way - see `EIP1193NodeProvider`.
+ * runtime path is the same either way - see `BurnerWalletNodeProvider`.
  */
 type JSONRPCEndpoint = Parameters<typeof createCurriedJSONRPC>[0];
 
@@ -162,7 +162,10 @@ export function createBurnerWalletProvider(
 			providerOptions.impersonate = {
 				impersonator: {
 					impersonateAccount: async (params: {address: Hex}) => {
-						await (rpcProvider as any).request({
+						// Not in any eip-1193 table the client is typed with: the untyped escape hatch.
+						await (
+							rpcProvider as unknown as EIP1193GenericRequestProvider
+						).request({
 							method: 'hardhat_impersonateAccount',
 							params: [params.address],
 						});
