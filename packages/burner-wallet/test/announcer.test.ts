@@ -2,6 +2,7 @@
 import {describe, it, expect, afterEach, vi} from 'vitest';
 import {announceBurnerWallet} from '../src/announcer.js';
 import type {EIP1193Provider} from 'eip-1193';
+import {walletPrompts} from '@etherplay/wallet-connector';
 
 function createMockProvider(): EIP1193Provider {
 	return {
@@ -99,6 +100,53 @@ describe('announceBurnerWallet', () => {
 
 		const event = listener.mock.calls[0][0] as CustomEvent;
 		expect(Object.isFrozen(event.detail)).toBe(true);
+
+		window.removeEventListener('eip6963:announceProvider', listener);
+	});
+	it('announces that it never prompts (info.autoApproves)', () => {
+		const provider = createMockProvider();
+		const listener = vi.fn();
+		window.addEventListener('eip6963:announceProvider', listener);
+
+		cleanups.push(announceBurnerWallet(provider));
+
+		const event = listener.mock.calls[0][0] as CustomEvent;
+		expect(event.detail.info.autoApproves).toBe(true);
+		// The reader the connect stack uses. A dev dependency only: the package
+		// declares the field itself and imports nothing from it at runtime.
+		expect(walletPrompts(event.detail.info)).toBe(false);
+
+		window.removeEventListener('eip6963:announceProvider', listener);
+	});
+
+	it('lets a caller announce a provider that does prompt', () => {
+		const provider = createMockProvider();
+		const listener = vi.fn();
+		window.addEventListener('eip6963:announceProvider', listener);
+
+		cleanups.push(announceBurnerWallet(provider, {autoApproves: false}));
+
+		const event = listener.mock.calls[0][0] as CustomEvent;
+		expect(event.detail.info.autoApproves).toBe(false);
+		expect(walletPrompts(event.detail.info)).toBe(true);
+
+		window.removeEventListener('eip6963:announceProvider', listener);
+	});
+
+	it('initBurnerWallet announces autoApproves too', async () => {
+		const {initBurnerWallet} = await import('../src/init.js');
+		const listener = vi.fn();
+		window.addEventListener('eip6963:announceProvider', listener);
+
+		const instance = initBurnerWallet({
+			nodeURL: {request: vi.fn()},
+			uuid: 'init-uuid',
+		});
+		cleanups.push(instance.cleanup);
+
+		const event = listener.mock.calls[0][0] as CustomEvent;
+		expect(event.detail.info.autoApproves).toBe(true);
+		expect(Object.isFrozen(event.detail.info)).toBe(true);
 
 		window.removeEventListener('eip6963:announceProvider', listener);
 	});

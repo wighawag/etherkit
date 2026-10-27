@@ -24,6 +24,9 @@ importers:
         specifier: ^0.2.0
         version: 0.2.0
     devDependencies:
+      '@etherplay/wallet-connector':
+        specifier: ^0.2.1
+        version: 0.2.1
       '@vitest/coverage-v8':
         specifier: ^4.0.18
         version: 4.0.18(vitest@4.0.18(@types/node@25.3.3)(jsdom@29.0.1(@noble/hashes@1.8.0)))
@@ -399,6 +402,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@etherplay/wallet-connector@0.2.1':
+    resolution: {integrity: sha512-AJWZZpu4N/899R8hrOs2B1edbbelfCM1PRaLIvHTWypuW8fLNxNAL8fQJ94e+vu6NpQe9egjZ044eCCoLgcj2A==}
 
   '@exodus/bytes@1.15.0':
     resolution: {integrity: sha512-UY0nlA+feH81UGSHv92sLEPLCeZFjXOuHhrIo0HQydScuQc8s0A7kL/UdgwgDq8g8ilksmuoF35YVTNphV2aBQ==}
@@ -1851,6 +1857,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.3':
     optional: true
+
+  '@etherplay/wallet-connector@0.2.1': {}
 
   '@exodus/bytes@1.15.0(@noble/hashes@1.8.0)':
     optionalDependencies:
