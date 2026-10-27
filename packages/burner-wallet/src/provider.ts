@@ -2,7 +2,8 @@
 
 import type {
 	EIP1193Provider,
-	EIP1193ProviderWithoutEvents,
+	EIP1193CoreProvider,
+	EIP1193GenericRequestProvider,
 	EIP1193Account,
 	EIP1193ChainId,
 	EIP1193ConnectInfoMessage,
@@ -13,7 +14,8 @@ import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {
 	extendProviderWithAccounts,
 	generateMnemonic,
-	ProviderOptions,
+	type EIP1193AccountsProvider,
+	type ProviderOptions,
 } from 'eip-1193-accounts-wrapper';
 import {english} from 'viem/accounts';
 import {derivePrivateKeys} from './derivation.js';
@@ -133,9 +135,7 @@ export function createBurnerWalletProvider(
 	 * alternative - assign, then build, then save - leaves a rejected mnemonic in
 	 * `walletManager.get()` while storage and signing still use the old one.
 	 */
-	function buildInner(
-		forMnemonic: string | null,
-	): EIP1193ProviderWithoutEvents {
+	function buildInner(forMnemonic: string | null): EIP1193AccountsProvider {
 		// `createCurriedJSONRPC` takes `string | RequestRPC<Methods>`: a URL it
 		// fetches, or an object it calls `.request({method, params})` on. Our node
 		// type states only the `.request` that is actually used, which is why the
@@ -173,8 +173,12 @@ export function createBurnerWalletProvider(
 			};
 		}
 
+		// `rpcProvider` is remote-procedure-call's client over an untyped method
+		// table, so it does not carry eip-1193's per-method overloads: this is the
+		// one place it is asserted to be what the wrapper needs, a provider of the
+		// core methods (which the node it points at serves).
 		return extendProviderWithAccounts(
-			rpcProvider as unknown as EIP1193ProviderWithoutEvents,
+			rpcProvider as unknown as EIP1193CoreProvider,
 			providerOptions,
 		);
 	}
@@ -252,13 +256,19 @@ export function createBurnerWalletProvider(
 	// ==================== Provider ====================
 	const provider: EIP1193Provider = {
 		async request(args: {method: string; params?: readonly unknown[]}) {
+			// A genuine boundary: this is the wallet's own router, which receives any
+			// method as a runtime string and forwards it, so it talks to the inner
+			// provider through the untyped request signature. Read `inner` at call
+			// time: `walletManager.createNew()` below replaces it.
+			const forward = () => inner as unknown as EIP1193GenericRequestProvider;
+
 			// Auto-create wallet on first connection
 			if (args.method === 'eth_requestAccounts') {
 				if (!mnemonic) {
 					walletManager.createNew();
 				}
-				const accounts = await inner.request(args as any);
-				return getOrderedAddresses(accounts as unknown as string[]);
+				const accounts = await forward().request<string[]>(args);
+				return getOrderedAddresses(accounts);
 			}
 
 			// Return ordered addresses
@@ -266,12 +276,12 @@ export function createBurnerWalletProvider(
 				if (!mnemonic) {
 					walletManager.createNew();
 				}
-				const accounts = await inner.request(args as any);
-				return getOrderedAddresses(accounts as unknown as string[]);
+				const accounts = await forward().request<string[]>(args);
+				return getOrderedAddresses(accounts);
 			}
 
 			// All other methods delegate to inner provider
-			return inner.request(args as any);
+			return forward().request(args);
 		},
 
 		on(eventName: string, listener: (...args: any[]) => any) {
