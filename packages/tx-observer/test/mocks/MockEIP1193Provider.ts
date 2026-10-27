@@ -1,4 +1,4 @@
-import type {EIP1193ProviderWithoutEvents} from 'eip-1193';
+import type {EIP1193CoreProvider} from 'eip-1193';
 
 // Mock transaction data structure
 export interface MockTransaction {
@@ -120,7 +120,7 @@ export interface MockProviderController {
  * Creates a mock EIP-1193 provider with a controller for test manipulation
  */
 export function createMockProvider(config: MockProviderConfig = {}): {
-	provider: EIP1193ProviderWithoutEvents;
+	provider: EIP1193CoreProvider;
 	controller: MockProviderController;
 } {
 	const {
@@ -501,7 +501,7 @@ export function createMockProvider(config: MockProviderConfig = {}): {
 	};
 
 	return {
-		provider: provider as unknown as EIP1193ProviderWithoutEvents,
+		provider: provider as unknown as EIP1193CoreProvider,
 		controller,
 	};
 }

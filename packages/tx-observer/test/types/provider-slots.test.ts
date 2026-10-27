@@ -14,6 +14,7 @@ import type {
 	EIP1193HttpNodeProvider,
 	EIP1193NodeProvider,
 	EIP1193Provider,
+	EIP1193SignerProvider,
 	EIP1193WalletProvider,
 } from 'eip-1193';
 import {createTransactionObserver} from '../../src/index.js';
@@ -29,7 +30,9 @@ describe('provider slots', () => {
 				undefined as unknown as EIP1193CoreProvider,
 			] as const;
 			createTransactionObserver({finality: 1, provider: providers[0]});
+			createTransactionObserver({finality: 1, provider: providers[1]});
 			createTransactionObserver({finality: 1, provider: providers[2]});
+			createTransactionObserver({finality: 1, provider: providers[4]});
 			const observer = createTransactionObserver({
 				finality: 1,
 				provider: providers[3],
@@ -39,6 +42,9 @@ describe('provider slots', () => {
 			observer.setProvider(providers[2]);
 			observer.setProvider(providers[3]);
 			observer.setProvider(providers[4]);
+			// not wider than intended: a signer-only provider cannot answer the reads
+			// @ts-expect-error
+			observer.setProvider(undefined as unknown as EIP1193SignerProvider);
 		};
 		expect(_neverCalled).toBeTypeOf('function');
 	});

@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --ignore-scripts
 
+      - name: Format
+        run: pnpm format:check
+
       - name: build packages
         run: pnpm build
 
